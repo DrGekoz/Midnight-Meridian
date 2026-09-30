@@ -84,6 +84,10 @@ const UI = (() => {
         if (id === "master") Audio_.setMaster(v);
         else Audio_.setGain(id, v);
         if (id !== "master" && Audio_.muted && v > 0) unmute();
+        /* Persist the gain. Debounced through saveSettings' own caller rather
+           than a timer here — localStorage writes are cheap enough at slider
+           rates, and a timer would need its own teardown on close. */
+        onGain && onGain();
       });
       el.sliders[id] = { input: inp, out };
       wrap.append(lab, inp, out);
@@ -135,7 +139,7 @@ const UI = (() => {
     announce(label);
     onChange && onChange();
   }
-  let onChange = null;
+  let onChange = null, onGain = null;
 
   function applyState(){
     const th = THEME_BY_ID[themeId];
@@ -180,5 +184,6 @@ const UI = (() => {
            get open(){ return open; },
            get theme(){ return themeId; },
            get season(){ return seasonId; },
-           set onChange(f){ onChange = f; } };
+           set onChange(f){ onChange = f; },
+           set onGain(f){ onGain = f; } };
 })();

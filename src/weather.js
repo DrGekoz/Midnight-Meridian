@@ -299,6 +299,50 @@ function buildPoles(y0, h, seed, spacing, pal){
   return s;
 }
 
+/* --- CLICK RIPPLES ---------------------------------------------------------
+   Clicking the water drops a ripple, and clicking the train or the sky does
+   nothing visible. The ripple is a real expanding ring, not a growing sprite.
+
+   LOOP CRITICAL: ripples are the one thing here that is NOT a pure function of
+   t, so it cannot be part of the render path used by the loop test. It is kept
+   out of render() and driven by the pointer handler instead; see noteRipples
+   in main.js. Ripples also expire, so they cannot accumulate without bound. */
+const RIP_MAX = 6;
+const ripples = [];                       // {x, y, born, strength}
+function dropRipple(x, y, now){
+  /* only water reacts -- a click on the sky or the train is ignored */
+  if (y < LAKE_Y0 + 2 || y >= LAKE_Y0 + LAKE_H) return false;
+  /* keep the ring inside the frame and off the shore */
+    const cx = Math.max(6, Math.min(VW - 7, Math.round(x)));
+    const cy = Math.max(LAKE_Y0 + 2, Math.min(LAKE_Y0 + LAKE_H - 1, Math.round(y)));
+    if (ripples.length >= RIP_MAX) ripples.shift();
+    ripples.push({ x: cx, y: cy, born: now, strength: 1 });
+    return true;
+}
+function drawRipples(now){
+  for (let i = ripples.length - 1; i >= 0; i--){
+    const rp = ripples[i];
+    const age = now - rp.born;
+    if (age > 2.2 || age < 0){ ripples.splice(i, 1); continue; }
+    /* the ring expands and fades; radius is in PIXELS so it reads at 480x270 */
+    const rad = 3 + age * 13;
+    const fade = rp.strength * (1 - age / 2.2);
+    if (fade <= 0.02) continue;
+    const r2 = rad * rad;
+    const ri = Math.ceil(rad);
+    for (let dy = -ri; dy <= ri; dy++) for (let dx = -ri; dx <= ri; dx++){
+      const d2 = dx*dx + dy*dy;
+      /* a 1px ring: only pixels whose distance is within 1.4 of the radius */
+      const k = d2 > r2 ? Math.sqrt(d2) - rad : rad - Math.sqrt(d2);
+      if (k > 1.4) continue;
+      const x = rp.x + dx, y = rp.y + dy;
+      if (x < 0 || x >= VW || y < LAKE_Y0 || y >= LAKE_Y0 + LAKE_H) continue;
+      if (bayer01(x, y) > fade) continue;
+      addPix(x, y, 30 * fade, 40 * fade, 54 * fade);
+    }
+  }
+}
+
 /* --- WAKE RIPPLES: the train's passage disturbs the water -------------------
    A long consist moving past a lake leaves a wake, and the puddle surface should
    break up under it. This is drawn into the reflection rows only, so it reads as

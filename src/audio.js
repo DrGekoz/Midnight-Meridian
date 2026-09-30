@@ -430,10 +430,19 @@ const Audio_ = (() => {
   function setStyle(cfg){ if (music) music.setStyle(cfg); }
   function setVerb(w){ if (music) music.setVerb(w); }
   function tick(now){ if (train) train.tick(now); }
+  /* Restore a saved gain set in one go. Unknown keys are ignored rather than
+     throwing, so a stale saved state can never wedge the audio graph. */
+  function setGains(obj){
+    if (!obj) return;
+    for (const k in obj){
+      const v = obj[k];
+      if (typeof v === "number" && isFinite(v) && v >= 0 && v <= 1) setGain(k, v);
+    }
+  }
 
   return {
     ensure, start, loadAsset, playAmb, playRain,
-    setGain, setMaster, toggleMute, setStyle, setVerb, tick,
+    setGain, setGains, setMaster, toggleMute, setStyle, setVerb, tick,
     get started(){ return started; },
     get muted(){ return muted; },
     get gains(){ return gains; },

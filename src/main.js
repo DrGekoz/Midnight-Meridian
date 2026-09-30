@@ -9,7 +9,37 @@
    theme-aware without every call site having to thread it through. */
 let ACTIVE_THEME = null;
 
-/* ============================================================ theme switching */
+/* ========================================================== persistence (F7) */
+/* Settings survive a reload. Kept deliberately small and defensive: a private
+   browsing window throws on localStorage access, and the piece must still run.
+   Audio gains are stored as 0..1 because that is what the GainNodes take, so
+   restoring them needs no conversion. */
+const STORE_KEY = "midnight-meridian/v3";
+
+function saveSettings(){
+  try {
+    const T = ACTIVE_THEME;
+    if (!T) return;
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      theme: T.id, season: T.season, tod: T.tod, weather: T.weather,
+      gains: Audio_.gains ? Object.assign({}, Audio_.gains) : null,
+      muted: !!(Audio_.muted)
+    }));
+  } catch (_) { /* storage unavailable or full — the piece still works */ }
+}
+
+function loadSettings(){
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    /* Validate: a hand-edited or stale entry must not put the piece in a state
+       it cannot render. Anything unrecognised falls back to the default theme. */
+    if (!s || typeof s.theme !== "string" || !THEMES[s.theme]) return null;
+    if (typeof s.season !== "string") return null;
+    return s;
+  } catch (_) { return null; }
+}
 function setTheme(themeId, seasonId, opts){
   const o = opts || {};
   const T = resolveTheme(themeId, seasonId || (typeof UI !== "undefined" && UI.season) || "summer");
@@ -29,6 +59,7 @@ function setTheme(themeId, seasonId, opts){
     Audio_.playAmb(ambSlug);
   }
   if (!o.silent && typeof UI !== "undefined") UI.applyState();
+  saveSettings();
   return T;
 }
 
@@ -57,10 +88,44 @@ document.addEventListener('fullscreenchange', resize);
 document.addEventListener('webkitfullscreenchange', resize);
 document.addEventListener('dblclick', toggleFullscreen);
 
+/* ---- click the water to drop a ripple ------------------------------------
+   Screen coords -> virtual pixel coords, then hand off to dropRipple. The
+   y is clamped to the water band, so a click above the shoreline (sky, train,
+   mountains) is ignored rather than silently landing on the lake.
+
+   Ripples are deliberately NOT drawn by render(). They depend on wall-clock
+   time, so folding them into render(t) would make the frame depend on state
+   outside t and break the bit-exact loop proof. They are drawn as an overlay
+   pass immediately after render() instead. */
+function pointerToPixel(ev){
+  const c = document.getElementById('cv');
+  if (!c) return null;
+  const r = c.getBoundingClientRect();
+  const sx = (ev.clientX - r.left) / Math.max(1, r.width)  * VW;
+  const sy = (ev.clientY - r.top)  / Math.max(1, r.height) * VH;
+  return [sx, sy];
+}
+function noteRipples(ev){
+  const p = pointerToPixel(ev);
+  if (!p) return;
+  dropRipple(p[0], p[1], performance.now() / 1000);
+}
+document.addEventListener('pointerdown', noteRipples);
+document.addEventListener('click', noteRipples);
+
+
 /* ================================================================ main loop  */
 let simFrame = 0, paused = false, loopOk = null;
 let showDiag = false, fps = 0, fpsT = 0, fpsN = 0;
 const STEP = 1000 / 60;
+
+/* ---- honour reduced-motion: freeze the piece on its first frame ---------- */
+try {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    paused = true;
+  }
+} catch (_) { /* matchMedia absent in the test harness */ }
+
 
 function hashFB(){
   let h = 0x811c9dc5;
@@ -91,6 +156,11 @@ function loop(now){
     while (acc >= STEP && guard < 4){
       acc -= STEP; guard++;
       render(simFrame / 60, ACTIVE_THEME);
+      /* Ripples are an OVERLAY, drawn after render() rather than inside it.
+         They are the one thing in the piece keyed to wall-clock time, so putting
+         them in render(t) would make the frame depend on state outside t and
+         break the bit-exact loop proof. Draw them straight onto the buffer. */
+      if (ripples.length) drawRipples(now / 1000);
       simFrame++;
       if (simFrame >= LOOP_FRAMES) simFrame = 0;
     }
@@ -123,13 +193,22 @@ document.addEventListener('keydown', e => {
 /* ==================================================================== boot   */
 function boot(){
   /* 1. the default theme, which also builds every strip */
-  setTheme(DEFAULT_THEME, "summer", { silent:true });
+  /* 1. theme — restore the saved scene if there is a valid one */
+  const saved = loadSettings();
+  if (saved){
+    setTheme(saved.theme, saved.season, { silent:true });
+    if (saved.gains) Audio_.setGains(saved.gains);
+    if (typeof UI !== "undefined"){ UI.theme = saved.theme; UI.season = saved.season; }
+  } else {
+    setTheme(DEFAULT_THEME, "summer", { silent:true });
+  }
   /* 2. presentation */
   resize();
   /* 3. UI */
   if (typeof UI !== "undefined" && UI.build){
     UI.build();
     UI.onChange = () => setTheme(UI.theme, UI.season);
+    UI.onGain = () => saveSettings();
   }
   /* 4. audio initialises on the first real gesture (autoplay policy) */
   const bootAudio = async () => {

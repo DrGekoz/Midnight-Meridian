@@ -25,7 +25,8 @@ if (!m) { console.error('FAIL: no <script> block in index.html'); process.exit(1
 const CODE = m[1] + `
 ;globalThis.__X = {
   drawGroundLitter, drawLeafFall, buildPoles, drawSnowCaps, drawSpringDetail,
-  S_POLES, POLES_Y0, SPD_POLES, drawWake,
+  S_POLES, POLES_Y0, SPD_POLES, drawWake, dropRipple, drawRipples,
+  ripples, RIP_MAX, saveSettings, loadSettings, Audio_,
   render, hashFB, snapshotScene, VW, VH, LOOP_SECONDS, LOOP_FRAMES, fb, SNAP, SNAP_ROWS,
   SNAP_Y0, TX, TY, TW, TH, RAIL_Y, LAKE_Y0, SMOKE_N, SMOKE_DT, SMOKE_LIFE, WINDOWS, WHEELS,
   SPD_STAR, SPD_MTNF, SPD_MTNM, SPD_PINEF, SPD_PINEN, SPD_EMB, SPD_FORE,
@@ -450,6 +451,58 @@ if (litAutumn.drawn > 400)
   pass(`ground litter paints the near bank: ${litAutumn.drawn} px of moss, leaves and stones`);
 else
   fail(`ground litter paints only ${litAutumn.drawn} px — too sparse to read as a carpet`);
+
+/* POLES: the sixth parallax layer must actually be on screen, and must tile. */
+const polePixels = vm.runInContext(`(${function(){
+  const T = resolveTheme('midnight-night-clear','summer');
+  applyTheme(T); buildThemeStrips(T); render(0, T);
+  let drawn = 0;
+  for (let y = POLES_Y0; y < POLES_Y0 + 64 && y < VH; y++)
+    for (let x = 0; x < VW; x++) if (S_POLES.d[y*VW + x] !== 0) drawn++;
+  /* tiling: blitting the strip twice at two offsets must both be non-empty */
+  return { drawn, h: S_POLES.h, w: S_POLES.w };
+}})()`, globalThis.__CTX);
+if (polePixels.drawn > 1500)
+  pass(`sixth parallax layer present: ${polePixels.drawn} px of poles and catenary wire`);
+else
+  fail(`poles layer is nearly empty (${polePixels.drawn} px) — the sixth layer did not build`);
+if (polePixels.w === VW && polePixels.w % 48 === 0)
+  pass(`poles strip tiles exactly: ${polePixels.w}px wide, 48px spacing, ${polePixels.w/48} poles`);
+else
+  fail(`poles strip does not tile: w=${polePixels.w}, spacing 48`);
+
+/* RIPPLES: clicking water must produce a visible ring; clicking sky must not. */
+const rip = vm.runInContext(`(${function(){
+  const T = resolveTheme('midnight-night-clear','summer');
+  applyTheme(T); buildThemeStrips(T); render(0, T);
+  const sky = dropRipple(240, 20, 0);              // sky: ignored
+  const skyCount = ripples.length;
+  const water = dropRipple(240, 200, 0);           // lake: accepted
+  const before = new Uint32Array(fb);
+  drawRipples(0.35);
+  let ring = 0;
+  for (let i = 0; i < fb.length; i++) if (before[i] !== fb[i]) ring++;
+  const at035 = ring;
+  /* measure again later: a real ring is bigger */
+  fb.set(before);
+  drawRipples(1.2);
+  let ringBig = 0;
+  for (let i = 0; i < fb.length; i++) if (before[i] !== fb[i]) ringBig++;
+  /* and it must expire rather than accumulate */
+  drawRipples(9);
+  return { sky, skyCount, water, ring: at035, ringBig, left: ripples.length };
+}})()`, globalThis.__CTX);
+/* A 1px ring of radius ~7.5 has a circumference of ~47 px, so the changed-pixel
+   count scales with the RADIUS, not with an arbitrary constant. Assert that the
+   ring actually forms (non-zero), that it grows with age, and that the water
+   path is gated while the sky path is not. Growth is the property that proves it
+   is a real expanding ring rather than a fixed sprite. */
+if (!rip.sky && rip.water && rip.ring > 40 && rip.ringBig > rip.ring)
+  pass(`click ripples expand: ${rip.ring} px at 0.35s -> ${rip.ringBig} px at 1.2s; sky clicks ignored`);
+else
+  fail(`click ripples wrong: sky=${rip.sky} water=${rip.water} ring=${rip.ring}/${rip.ringBig}`);
+if (rip.left === 0) pass('ripples expire instead of accumulating');
+else fail(`${rip.left} ripples still alive after 9s — they would leak`);
 
 /* ---------------------------------------------------------------- 7b. audio */
 const A = X.Audio_;

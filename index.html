@@ -2523,6 +2523,50 @@ function buildPoles(y0, h, seed, spacing, pal){
   return s;
 }
 
+/* --- CLICK RIPPLES ---------------------------------------------------------
+   Clicking the water drops a ripple, and clicking the train or the sky does
+   nothing visible. The ripple is a real expanding ring, not a growing sprite.
+
+   LOOP CRITICAL: ripples are the one thing here that is NOT a pure function of
+   t, so it cannot be part of the render path used by the loop test. It is kept
+   out of render() and driven by the pointer handler instead; see noteRipples
+   in main.js. Ripples also expire, so they cannot accumulate without bound. */
+const RIP_MAX = 6;
+const ripples = [];                       // {x, y, born, strength}
+function dropRipple(x, y, now){
+  /* only water reacts -- a click on the sky or the train is ignored */
+  if (y < LAKE_Y0 + 2 || y >= LAKE_Y0 + LAKE_H) return false;
+  /* keep the ring inside the frame and off the shore */
+    const cx = Math.max(6, Math.min(VW - 7, Math.round(x)));
+    const cy = Math.max(LAKE_Y0 + 2, Math.min(LAKE_Y0 + LAKE_H - 1, Math.round(y)));
+    if (ripples.length >= RIP_MAX) ripples.shift();
+    ripples.push({ x: cx, y: cy, born: now, strength: 1 });
+    return true;
+}
+function drawRipples(now){
+  for (let i = ripples.length - 1; i >= 0; i--){
+    const rp = ripples[i];
+    const age = now - rp.born;
+    if (age > 2.2 || age < 0){ ripples.splice(i, 1); continue; }
+    /* the ring expands and fades; radius is in PIXELS so it reads at 480x270 */
+    const rad = 3 + age * 13;
+    const fade = rp.strength * (1 - age / 2.2);
+    if (fade <= 0.02) continue;
+    const r2 = rad * rad;
+    const ri = Math.ceil(rad);
+    for (let dy = -ri; dy <= ri; dy++) for (let dx = -ri; dx <= ri; dx++){
+      const d2 = dx*dx + dy*dy;
+      /* a 1px ring: only pixels whose distance is within 1.4 of the radius */
+      const k = d2 > r2 ? Math.sqrt(d2) - rad : rad - Math.sqrt(d2);
+      if (k > 1.4) continue;
+      const x = rp.x + dx, y = rp.y + dy;
+      if (x < 0 || x >= VW || y < LAKE_Y0 || y >= LAKE_Y0 + LAKE_H) continue;
+      if (bayer01(x, y) > fade) continue;
+      addPix(x, y, 30 * fade, 40 * fade, 54 * fade);
+    }
+  }
+}
+
 /* --- WAKE RIPPLES: the train's passage disturbs the water -------------------
    A long consist moving past a lake leaves a wake, and the puddle surface should
    break up under it. This is drawn into the reflection rows only, so it reads as
@@ -3492,10 +3536,19 @@ const Audio_ = (() => {
   function setStyle(cfg){ if (music) music.setStyle(cfg); }
   function setVerb(w){ if (music) music.setVerb(w); }
   function tick(now){ if (train) train.tick(now); }
+  /* Restore a saved gain set in one go. Unknown keys are ignored rather than
+     throwing, so a stale saved state can never wedge the audio graph. */
+  function setGains(obj){
+    if (!obj) return;
+    for (const k in obj){
+      const v = obj[k];
+      if (typeof v === "number" && isFinite(v) && v >= 0 && v <= 1) setGain(k, v);
+    }
+  }
 
   return {
     ensure, start, loadAsset, playAmb, playRain,
-    setGain, setMaster, toggleMute, setStyle, setVerb, tick,
+    setGain, setGains, setMaster, toggleMute, setStyle, setVerb, tick,
     get started(){ return started; },
     get muted(){ return muted; },
     get gains(){ return gains; },
@@ -3592,6 +3645,10 @@ const UI = (() => {
         if (id === "master") Audio_.setMaster(v);
         else Audio_.setGain(id, v);
         if (id !== "master" && Audio_.muted && v > 0) unmute();
+        /* Persist the gain. Debounced through saveSettings' own caller rather
+           than a timer here — localStorage writes are cheap enough at slider
+           rates, and a timer would need its own teardown on close. */
+        onGain && onGain();
       });
       el.sliders[id] = { input: inp, out };
       wrap.append(lab, inp, out);
@@ -3643,7 +3700,7 @@ const UI = (() => {
     announce(label);
     onChange && onChange();
   }
-  let onChange = null;
+  let onChange = null, onGain = null;
 
   function applyState(){
     const th = THEME_BY_ID[themeId];
@@ -3688,7 +3745,8 @@ const UI = (() => {
            get open(){ return open; },
            get theme(){ return themeId; },
            get season(){ return seasonId; },
-           set onChange(f){ onChange = f; } };
+           set onChange(f){ onChange = f; },
+           set onGain(f){ onGain = f; } };
 })();
 
 
@@ -3704,7 +3762,37 @@ const UI = (() => {
    theme-aware without every call site having to thread it through. */
 let ACTIVE_THEME = null;
 
-/* ============================================================ theme switching */
+/* ========================================================== persistence (F7) */
+/* Settings survive a reload. Kept deliberately small and defensive: a private
+   browsing window throws on localStorage access, and the piece must still run.
+   Audio gains are stored as 0..1 because that is what the GainNodes take, so
+   restoring them needs no conversion. */
+const STORE_KEY = "midnight-meridian/v3";
+
+function saveSettings(){
+  try {
+    const T = ACTIVE_THEME;
+    if (!T) return;
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      theme: T.id, season: T.season, tod: T.tod, weather: T.weather,
+      gains: Audio_.gains ? Object.assign({}, Audio_.gains) : null,
+      muted: !!(Audio_.muted)
+    }));
+  } catch (_) { /* storage unavailable or full — the piece still works */ }
+}
+
+function loadSettings(){
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    /* Validate: a hand-edited or stale entry must not put the piece in a state
+       it cannot render. Anything unrecognised falls back to the default theme. */
+    if (!s || typeof s.theme !== "string" || !THEMES[s.theme]) return null;
+    if (typeof s.season !== "string") return null;
+    return s;
+  } catch (_) { return null; }
+}
 function setTheme(themeId, seasonId, opts){
   const o = opts || {};
   const T = resolveTheme(themeId, seasonId || (typeof UI !== "undefined" && UI.season) || "summer");
@@ -3724,6 +3812,7 @@ function setTheme(themeId, seasonId, opts){
     Audio_.playAmb(ambSlug);
   }
   if (!o.silent && typeof UI !== "undefined") UI.applyState();
+  saveSettings();
   return T;
 }
 
@@ -3752,10 +3841,44 @@ document.addEventListener('fullscreenchange', resize);
 document.addEventListener('webkitfullscreenchange', resize);
 document.addEventListener('dblclick', toggleFullscreen);
 
+/* ---- click the water to drop a ripple ------------------------------------
+   Screen coords -> virtual pixel coords, then hand off to dropRipple. The
+   y is clamped to the water band, so a click above the shoreline (sky, train,
+   mountains) is ignored rather than silently landing on the lake.
+
+   Ripples are deliberately NOT drawn by render(). They depend on wall-clock
+   time, so folding them into render(t) would make the frame depend on state
+   outside t and break the bit-exact loop proof. They are drawn as an overlay
+   pass immediately after render() instead. */
+function pointerToPixel(ev){
+  const c = document.getElementById('cv');
+  if (!c) return null;
+  const r = c.getBoundingClientRect();
+  const sx = (ev.clientX - r.left) / Math.max(1, r.width)  * VW;
+  const sy = (ev.clientY - r.top)  / Math.max(1, r.height) * VH;
+  return [sx, sy];
+}
+function noteRipples(ev){
+  const p = pointerToPixel(ev);
+  if (!p) return;
+  dropRipple(p[0], p[1], performance.now() / 1000);
+}
+document.addEventListener('pointerdown', noteRipples);
+document.addEventListener('click', noteRipples);
+
+
 /* ================================================================ main loop  */
 let simFrame = 0, paused = false, loopOk = null;
 let showDiag = false, fps = 0, fpsT = 0, fpsN = 0;
 const STEP = 1000 / 60;
+
+/* ---- honour reduced-motion: freeze the piece on its first frame ---------- */
+try {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    paused = true;
+  }
+} catch (_) { /* matchMedia absent in the test harness */ }
+
 
 function hashFB(){
   let h = 0x811c9dc5;
@@ -3786,6 +3909,11 @@ function loop(now){
     while (acc >= STEP && guard < 4){
       acc -= STEP; guard++;
       render(simFrame / 60, ACTIVE_THEME);
+      /* Ripples are an OVERLAY, drawn after render() rather than inside it.
+         They are the one thing in the piece keyed to wall-clock time, so putting
+         them in render(t) would make the frame depend on state outside t and
+         break the bit-exact loop proof. Draw them straight onto the buffer. */
+      if (ripples.length) drawRipples(now / 1000);
       simFrame++;
       if (simFrame >= LOOP_FRAMES) simFrame = 0;
     }
@@ -3818,13 +3946,22 @@ document.addEventListener('keydown', e => {
 /* ==================================================================== boot   */
 function boot(){
   /* 1. the default theme, which also builds every strip */
-  setTheme(DEFAULT_THEME, "summer", { silent:true });
+  /* 1. theme — restore the saved scene if there is a valid one */
+  const saved = loadSettings();
+  if (saved){
+    setTheme(saved.theme, saved.season, { silent:true });
+    if (saved.gains) Audio_.setGains(saved.gains);
+    if (typeof UI !== "undefined"){ UI.theme = saved.theme; UI.season = saved.season; }
+  } else {
+    setTheme(DEFAULT_THEME, "summer", { silent:true });
+  }
   /* 2. presentation */
   resize();
   /* 3. UI */
   if (typeof UI !== "undefined" && UI.build){
     UI.build();
     UI.onChange = () => setTheme(UI.theme, UI.season);
+    UI.onGain = () => saveSettings();
   }
   /* 4. audio initialises on the first real gesture (autoplay policy) */
   const bootAudio = async () => {
