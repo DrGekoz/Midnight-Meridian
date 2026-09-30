@@ -1,0 +1,23 @@
+# build artefacts
+audio_cache/
+*.log
+
+# local scratch / generated previews
+frame_*.png
+diag-*.png
+hero_x3.png
+themes_sheet.png
+
+# the shipped single-file build is generated from src/ by tools/build_single.py,
+# but it IS the product, so it stays tracked.
+!index.html
+
+# editors / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# node
+node_modules/

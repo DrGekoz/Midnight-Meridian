@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="MIDNIGHT MERIDIAN — a 120-second looping pixel-art night train, procedurally generated, with synthesised lo-fi score and 96 themes.">
+<meta name="color-scheme" content="dark">
+<title>MIDNIGHT MERIDIAN</title>
+<style>
+/*__CSS__*/
+</style>
+</head>
+<body>
+<canvas id="cv" aria-label="Pixel art night train scene" role="img"></canvas>
+
+<!-- Control surface. Collapsed by default: the art is the product. -->
+<button id="menu-btn" type="button" aria-expanded="false" aria-controls="panel"
+        aria-label="Open scene controls" title="Scene controls">
+  <span id="icon-btn" aria-hidden="true"></span>
+  <span class="btn-label">Scene</span>
+</button>
+
+<button id="mute-btn" type="button" aria-pressed="true" aria-label="Unmute audio"
+        title="Mute / unmute"></button>
+
+<div id="panel" class="panel" role="dialog" aria-modal="false" aria-label="Scene controls">
+  <div class="panel-head">
+    <h1 class="panel-title">Midnight Meridian</h1>
+    <button class="icon-only" type="button" data-close aria-label="Close controls"></button>
+  </div>
+  <div id="panel-body" class="panel-body"></div>
+  <p class="panel-foot">F11 full screen &middot; D diagnostics &middot; Space pause</p>
+</div>
+
+<p id="live" class="sr-only" aria-live="polite" role="status"></p>
+<div id="diag" class="diag"></div>
+
+<script>
+/*__JS__*/
+</script>
+</body>
+</html>

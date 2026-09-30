@@ -1,0 +1,115 @@
+{
+  "rain": {
+    "slug": "rain",
+    "title": "Rain, Moderate, C",
+    "creator": "5121236",
+    "license": "by",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "source": "Openverse / Wikimedia Commons",
+    "url": "https://cdn.freesound.org/previews/401/401275_5121236-hq.mp3",
+    "bytes": 481115,
+    "duration": 30.0
+  },
+  "rain-heavy": {
+    "slug": "rain-heavy",
+    "title": "Heavy Rain in the City",
+    "creator": "2454586",
+    "license": "by",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "source": "Openverse / Wikimedia Commons",
+    "url": "https://cdn.freesound.org/previews/539/539332_2454586-hq.mp3",
+    "bytes": 481115,
+    "duration": 30.0
+  },
+  "thunder": {
+    "file": "thunder.mp3",
+    "bytes": 22893,
+    "title": "Thunder rumbling, underwater, outdoors_Thunder rumbling.aif",
+    "creator": "carroll27",
+    "license": "cc0 1.0",
+    "source": "https://freesound.org/people/carroll27/sounds/151854"
+  },
+  "wind": {
+    "file": "wind.mp3",
+    "bytes": 240429,
+    "title": "Wind Howling thru window crack.mp3",
+    "creator": "DAVESTALKER",
+    "license": "cc0 1.0",
+    "source": "https://freesound.org/people/DAVESTALKER/sounds/331527"
+  },
+  "birds": {
+    "file": "birds.mp3",
+    "bytes": 208557,
+    "title": "Spring Morning Beirut Birds city ambiance_01.mp3",
+    "creator": "The_Sound_Side",
+    "license": "by 4.0",
+    "source": "https://freesound.org/people/The_Sound_Side/sounds/156950"
+  },
+  "crickets": {
+    "file": "crickets.mp3",
+    "bytes": 125229,
+    "title": "crickets",
+    "creator": "FreethinkerAnon",
+    "license": "cc0 1.0",
+    "source": "https://freesound.org/people/FreethinkerAnon/sounds/129678"
+  },
+  "waves": {
+    "file": "waves.mp3",
+    "bytes": 240429,
+    "title": "ocean waves sea beach close stereo.wav",
+    "creator": "lavatorius",
+    "license": "cc0 1.0",
+    "source": "https://freesound.org/people/lavatorius/sounds/91234"
+  },
+  "fire": {
+    "file": "fire.mp3",
+    "bytes": 192429,
+    "title": "Fire Crackling 01.wav",
+    "creator": "kingsrow",
+    "license": "cc0 1.0",
+    "source": "https://freesound.org/people/kingsrow/sounds/181563"
+  },
+  "snow": {
+    "slug": "snow",
+    "title": "Footsteps, Snow, A",
+    "creator": "5121236",
+    "license": "by",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "source": "Openverse / Wikimedia Commons",
+    "url": "https://cdn.freesound.org/previews/397/397946_5121236-hq.mp3",
+    "bytes": 321036,
+    "duration": 20.0
+  },
+  "stream": {
+    "file": "stream.mp3",
+    "bytes": 240429,
+    "title": "Small Stream Water flowing fast",
+    "creator": "videofueralle",
+    "license": "by 4.0",
+    "source": "https://freesound.org/people/videofueralle/sounds/534866"
+  },
+  "city": {
+    "file": "city.mp3",
+    "bytes": 240429,
+    "title": "City Terrace Night 2",
+    "creator": "Sotiris_Laskaris",
+    "license": "cc0 1.0",
+    "source": "https://freesound.org/people/Sotiris_Laskaris/sounds/567387"
+  },
+  "crowd": {
+    "file": "crowd.mp3",
+    "bytes": 192429,
+    "title": "Bar Crowd in Belgrade",
+    "creator": "EpicWizard",
+    "license": "cc0 1.0",
+    "source": "https://freesound.org/people/EpicWizard/sounds/394290"
+  },
+  "clock": {
+    "file": "clock.mp3",
+    "bytes": 47853,
+    "title": "Clock ticking",
+    "creator": "olver",
+    "license": "cc0 1.0",
+    "source": "https://freesound.org/people/olver/sounds/130388"
+  }
+}
