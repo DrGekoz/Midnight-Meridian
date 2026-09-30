@@ -3132,7 +3132,14 @@ const Audio_ = (() => {
   let musicBus = null, rainBus = null, ambBus = null, trainBus = null;
   let musicFilter = null, musicVerb = null;
   let musicWobble = null, musicWobbleGain = null;
-  const gains = { master: 0, music: 0.8, rain: 0, amb: 0, train: 0.7 };
+  /* Master starts at a listenable level. It used to be 0 with `muted = true`,
+     which meant pressing play produced silence: the music bus was up at 0.8 but
+     the master bus was at 0. Browsers require a gesture before audio starts, so
+     the piece looked broken rather than muted. `muted` still starts true so no
+     sound escapes until the user actually interacts -- that is the autoplay
+     policy, not a volume bug -- but the SLIDER reflects the level the user will
+     hear once they unmute, instead of reading 0 and inviting a hunt. */
+  const gains = { master: 0.8, music: 0.8, rain: 0.55, amb: 0.45, train: 0.7 };
   const buffers = {};                 // slug -> AudioBuffer
   let music = null;                    // synth state
   let train = null;                    // train synth state
@@ -3229,19 +3236,47 @@ const Audio_ = (() => {
     try { buffers[slug] = await b64ToBuf(b64); } catch(e){ buffers[slug] = null; }
     return buffers[slug];
   }
-  function playAmb(slug){
-    if (currentAmb === slug) return;
-    stopSource(currentAmbSrc); currentAmbSrc = null; currentAmb = slug;
-    if (!slug || !buffers[slug] || !ctx) return;
-    currentAmbSrc = loopSource(ctx, buffers[slug], ambBus);
-  }
-  function playRain(slug){
-    if (currentRain === slug) return;
-    stopSource(currentRainSrc); currentRainSrc = null; currentRain = slug;
-    if (!slug || !buffers[slug] || !ctx) return;
-    currentRainSrc = loopSource(ctx, buffers[slug], rainBus);
-  }
-  let currentAmbSrc = null, currentRainSrc = null;
+  /* ---- ambient bus with N layers ---------------------------------------------
+       Each bus holds a LIST of looping clips rather than one. The first clip is
+       the "bed" at full level; any others are layered underneath at a fixed
+       fraction so a scene can be rain + thunder, or birds + stream + waves,
+       without the mix turning to mud.
+
+       Layer 0 always routes straight to the bus. Layers 1..n each get their own
+       gain node so they can be attenuated independently, and so stopping the bus
+       has to explicitly stop every source.                                  */
+    const layers = { amb: [], wx: [] };           // {slug, src, gainNode}
+    const LAYER_MIX = 0.42;                      // gain for layers 1..n
+
+    function stopBus(bus){
+      for (const L of layers[bus]){ if (L.src) stopSource(L.src); L.src = null; }
+      layers[bus].length = 0;
+    }
+
+    function playBus(bus, slugs){
+      const want = (slugs || []).filter(s => s && buffers[s]);
+      /* unchanged? do nothing — this runs on every theme switch and re-triggering
+         a 30s loop file audibly clicks the seam */
+      const have = layers[bus].map(L => L.slug);
+      if (have.length === want.length && have.every((v, i) => v === want[i])) return;
+      stopBus(bus);
+      if (!ctx) return;
+      want.forEach((slug, i) => {
+        if (i === 0){
+          layers[bus].push({ slug, src: loopSource(ctx, buffers[slug], bus === "amb" ? ambBus : rainBus), gainNode: null });
+        } else {
+          const g = ctx.createGain();
+          g.gain.value = LAYER_MIX;
+          g.connect(bus === "amb" ? ambBus : rainBus);
+          layers[bus].push({ slug, src: loopSource(ctx, buffers[slug], g), gainNode: g });
+        }
+      });
+    }
+    function playAmb(slugs){ playBus("amb", Array.isArray(slugs) ? slugs : [slugs]); }
+    function playRain(slugs){ playBus("wx", Array.isArray(slugs) ? slugs : [slugs]); }
+    /* Which clips are live on a bus right now — used by verify.js to prove every
+       bundled asset is actually reachable. */
+    function activeOn(bus){ return layers[bus].map(L => L.slug); }
 
   /* =======================================================================
      SYNTHESISED MUSIC
@@ -3547,7 +3582,7 @@ const Audio_ = (() => {
   }
 
   return {
-    ensure, start, loadAsset, playAmb, playRain,
+    ensure, start, loadAsset, playAmb, playRain, activeOn, stopBus,
     setGain, setGains, setMaster, toggleMute, setStyle, setVerb, tick,
     get started(){ return started; },
     get muted(){ return muted; },
@@ -3793,6 +3828,49 @@ function loadSettings(){
     return s;
   } catch (_) { return null; }
 }
+/* ---- AMBIENT CLIP SELECTION ----------------------------------------------
+   Every one of the 13 bundled clips must be reachable, or the 2 MB of audio
+   shipped in the file is dead weight. The first version only ever selected 5 of
+   them (rain, snow, wind, birds, city) and left fire, stream, waves, thunder,
+   clock and crowd unreachable.
+
+   Two independent buses, because they answer different questions:
+     - WEATHER bus: what is falling. Fires on rain/snow/storm only.
+     - SCENE bus:   where you are. Fires on every combination.
+   A storm gets rain AND thunder; a summer day gets birds AND a stream.       */
+function ambientFor(T){
+  const amb = [], wx = [];
+  if (T.weather === "rain"){
+    wx.push(T.style === "cyberpunk" ? "rain-heavy" : "rain");
+    /* thunder rides the storm bus so its gain follows the rain slider */
+    if (T.weather === "rain" && (T.season === "Summer" || T.style === "cyberpunk")) wx.push("thunder");
+  } else if (T.weather === "snow"){
+    wx.push("snow", "wind");
+  } else if (T.weather === "storm"){
+    wx.push("rain-heavy", "thunder", "wind");
+  }
+  /* the scene bed: one clip that places you somewhere */
+  if (T.style === "cyberpunk"){
+    amb.push(T.tod === "day" ? "crowd" : "city");
+  } else if (T.style === "japan"){
+    amb.push(T.tod === "day" ? "stream" : "crickets");
+  } else {
+    if (T.tod === "day") amb.push("birds");
+    else amb.push(T.season === "Winter" ? "wind" : "crickets");
+  }
+  /* winter nights get a fire somewhere off-frame, and lakes get water.
+     These are the two clips that have no season or style of their own, so they
+     are layered on top of the scene bed rather than replacing it. */
+  if (T.season === "Winter" && T.tod === "night") amb.push("fire");
+  if (T.season === "Summer" && T.tod === "day") amb.push("stream");
+  /* a clock is the clock-face of a scene: cyberpunk night only */
+  if (T.style === "cyberpunk" && T.tod === "night" && T.season === "Winter") amb.push("clock");
+  /* a lake is a lake, in every scene, unless it is raining on it */
+  if (T.weather !== "rain") amb.push("waves");
+  return { amb: dedupe(amb), wx: dedupe(wx) };
+}
+function dedupe(a){ return a.filter((v, i) => a.indexOf(v) === i); }
+
 function setTheme(themeId, seasonId, opts){
   const o = opts || {};
   const T = resolveTheme(themeId, seasonId || (typeof UI !== "undefined" && UI.season) || "summer");
@@ -3802,14 +3880,15 @@ function setTheme(themeId, seasonId, opts){
   /* Music follows the style; only parameters change, never the graph. */
   Audio_.setStyle(T.music);
   Audio_.setVerb(T.music.wet);
-  /* Ambient bus: one clip per weather, one per season/daylight. */
+  /* Ambient buses. Both are cleared first so switching from rain to clear
+     actually stops the rain instead of leaving it layered under the new bed. */
   if (typeof AUDIO_B64 !== "undefined" && AUDIO_B64){
-    const rainSlug = T.weather === "rain" ? "rain" : (T.weather === "snow" ? "snow" : null);
-    const ambSlug  = T.tod === "day"
-        ? (T.season === "Winter" ? "wind" : "birds")
-        : (T.style === "cyberpunk" ? "city" : (T.season === "Winter" ? "snow" : "crickets"));
-    Audio_.playRain(rainSlug);
-    Audio_.playAmb(ambSlug);
+    const pick = ambientFor(T);
+    /* the whole list goes to its bus in one call; playBus diffs against what is
+       already playing, so an unchanged scene is a no-op and a changed one
+       replaces cleanly rather than layering up over itself */
+    Audio_.playAmb(pick.amb);
+    Audio_.playRain(pick.wx);
   }
   if (!o.silent && typeof UI !== "undefined") UI.applyState();
   saveSettings();

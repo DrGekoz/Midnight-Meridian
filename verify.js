@@ -26,7 +26,7 @@ const CODE = m[1] + `
 ;globalThis.__X = {
   drawGroundLitter, drawLeafFall, buildPoles, drawSnowCaps, drawSpringDetail,
   S_POLES, POLES_Y0, SPD_POLES, drawWake, dropRipple, drawRipples,
-  ripples, RIP_MAX, saveSettings, loadSettings, Audio_,
+  ripples, RIP_MAX, saveSettings, loadSettings, Audio_, ambientFor, AUDIO_B64,
   render, hashFB, snapshotScene, VW, VH, LOOP_SECONDS, LOOP_FRAMES, fb, SNAP, SNAP_ROWS,
   SNAP_Y0, TX, TY, TW, TH, RAIL_Y, LAKE_Y0, SMOKE_N, SMOKE_DT, SMOKE_LIFE, WINDOWS, WHEELS,
   SPD_STAR, SPD_MTNF, SPD_MTNM, SPD_PINEF, SPD_PINEN, SPD_EMB, SPD_FORE,
@@ -504,8 +504,68 @@ else
 if (rip.left === 0) pass('ripples expire instead of accumulating');
 else fail(`${rip.left} ripples still alive after 9s — they would leak`);
 
+/* EVERY bundled clip must be reachable from SOME theme. The first version of
+   the selection logic only ever chose 5 of the 13 clips, so six recordings --
+   including thunder and fire -- were fetched, licensed, base64-inlined into a
+   4 MB file, and never played. Nothing in the suite caught it, because the
+   audio check only asserted that the buses EXISTED, not that anything routed
+   to them. This walks every theme/season pair and unions the selection. */
+const reach = vm.runInContext(`(${function(){
+  /* THEMES is an ARRAY of 24 entries, not a keyed object. My first version used
+     `for (const id in THEMES)`, which yields "0".."23", so resolveTheme() fell
+     back to the default theme on every pass and only one scene was ever
+     examined -- it reported 9 of 13 clips dead while 8 of them were reachable
+     from the very first theme. */
+  const seen = new Set();
+  const ids = Array.isArray(THEMES) ? THEMES.map(t => t.id) : Object.keys(THEMES);
+  for (const id of ids){
+    for (const se of ['summer','autumn','winter','spring']){
+      const T = resolveTheme(id, se);
+      const pick = ambientFor(T);
+      for (const s of pick.amb) seen.add('amb:' + s);
+      for (const s of pick.wx)  seen.add('wx:'  + s);
+    }
+  }
+  const bundled = (typeof AUDIO_B64 !== 'undefined' && AUDIO_B64) ? Object.keys(AUDIO_B64) : [];
+  const reachable = [...seen].map(k => k.split(':')[1]);
+  const dead = bundled.filter(b => reachable.indexOf(b) < 0);
+  return { bundled: bundled.length, reachable: new Set(reachable).size, dead };
+}})()`, globalThis.__CTX);
+if (reach.dead.length === 0)
+  pass(`all ${reach.bundled} bundled clips are reachable (${reach.reachable} distinct)`);
+else
+  fail(`${reach.dead.length} of ${reach.bundled} bundled clips are NEVER played: ${reach.dead.join(', ')}`);
+
+/* Layering: a storm must stack more than one weather clip, or the bus is not
+   actually a bus. */
+const layered = vm.runInContext(`(${function(){
+  const storm = ambientFor(resolveTheme('midnight-night-rain','summer'));
+  const clear = ambientFor(resolveTheme('midnight-night-clear','summer'));
+  const winter = ambientFor(resolveTheme('midnight-day-clear','winter'));
+  return { stormWx: storm.wx.length, stormAmb: storm.amb.length,
+           clearWx: clear.wx.length, clearAmb: clear.amb.length,
+           winterAmb: winter.amb.length };
+}})()`, globalThis.__CTX);
+if (layered.clearWx === 0 && layered.clearAmb >= 2)
+  pass(`layering works: clear night plays ${layered.clearAmb} scene clips, ${layered.clearWx} weather; winter day ${layered.winterAmb}`);
+else
+  fail(`layering wrong: clearWx=${layered.clearWx} clearAmb=${layered.clearAmb} winterAmb=${layered.winterAmb}`);
+
 /* ---------------------------------------------------------------- 7b. audio */
 const A = X.Audio_;
+/* Default gains must be AUDIBLE. The master bus shipped at 0 with muted=true,
+   so pressing play produced silence while the panel showed a music slider at
+   80 — the piece looked broken rather than muted. Only the master gate is
+   allowed to be silent (autoplay policy); every other bus must start above zero. */
+if (A && A.gains){
+  const g = A.gains;
+  const silent = Object.keys(g).filter(k => g[k] <= 0.01);
+  if (silent.length === 0)
+    pass(`default gains are audible: ${Object.keys(g).map(k=>k+' '+(g[k]*100).toFixed(0)+'%').join(', ')}`);
+  else
+    fail(`default gain(s) at 0 — the piece would open SILENT: ${silent.join(', ')}`);
+}
+
 if (A && typeof A.start === 'function'){
   pass('audio engine constructed (music + train synth, gain buses)');
   const buses = Object.keys(A.gains || {});

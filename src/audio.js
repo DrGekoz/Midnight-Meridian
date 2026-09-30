@@ -26,7 +26,14 @@ const Audio_ = (() => {
   let musicBus = null, rainBus = null, ambBus = null, trainBus = null;
   let musicFilter = null, musicVerb = null;
   let musicWobble = null, musicWobbleGain = null;
-  const gains = { master: 0, music: 0.8, rain: 0, amb: 0, train: 0.7 };
+  /* Master starts at a listenable level. It used to be 0 with `muted = true`,
+     which meant pressing play produced silence: the music bus was up at 0.8 but
+     the master bus was at 0. Browsers require a gesture before audio starts, so
+     the piece looked broken rather than muted. `muted` still starts true so no
+     sound escapes until the user actually interacts -- that is the autoplay
+     policy, not a volume bug -- but the SLIDER reflects the level the user will
+     hear once they unmute, instead of reading 0 and inviting a hunt. */
+  const gains = { master: 0.8, music: 0.8, rain: 0.55, amb: 0.45, train: 0.7 };
   const buffers = {};                 // slug -> AudioBuffer
   let music = null;                    // synth state
   let train = null;                    // train synth state
@@ -123,19 +130,47 @@ const Audio_ = (() => {
     try { buffers[slug] = await b64ToBuf(b64); } catch(e){ buffers[slug] = null; }
     return buffers[slug];
   }
-  function playAmb(slug){
-    if (currentAmb === slug) return;
-    stopSource(currentAmbSrc); currentAmbSrc = null; currentAmb = slug;
-    if (!slug || !buffers[slug] || !ctx) return;
-    currentAmbSrc = loopSource(ctx, buffers[slug], ambBus);
-  }
-  function playRain(slug){
-    if (currentRain === slug) return;
-    stopSource(currentRainSrc); currentRainSrc = null; currentRain = slug;
-    if (!slug || !buffers[slug] || !ctx) return;
-    currentRainSrc = loopSource(ctx, buffers[slug], rainBus);
-  }
-  let currentAmbSrc = null, currentRainSrc = null;
+  /* ---- ambient bus with N layers ---------------------------------------------
+       Each bus holds a LIST of looping clips rather than one. The first clip is
+       the "bed" at full level; any others are layered underneath at a fixed
+       fraction so a scene can be rain + thunder, or birds + stream + waves,
+       without the mix turning to mud.
+
+       Layer 0 always routes straight to the bus. Layers 1..n each get their own
+       gain node so they can be attenuated independently, and so stopping the bus
+       has to explicitly stop every source.                                  */
+    const layers = { amb: [], wx: [] };           // {slug, src, gainNode}
+    const LAYER_MIX = 0.42;                      // gain for layers 1..n
+
+    function stopBus(bus){
+      for (const L of layers[bus]){ if (L.src) stopSource(L.src); L.src = null; }
+      layers[bus].length = 0;
+    }
+
+    function playBus(bus, slugs){
+      const want = (slugs || []).filter(s => s && buffers[s]);
+      /* unchanged? do nothing — this runs on every theme switch and re-triggering
+         a 30s loop file audibly clicks the seam */
+      const have = layers[bus].map(L => L.slug);
+      if (have.length === want.length && have.every((v, i) => v === want[i])) return;
+      stopBus(bus);
+      if (!ctx) return;
+      want.forEach((slug, i) => {
+        if (i === 0){
+          layers[bus].push({ slug, src: loopSource(ctx, buffers[slug], bus === "amb" ? ambBus : rainBus), gainNode: null });
+        } else {
+          const g = ctx.createGain();
+          g.gain.value = LAYER_MIX;
+          g.connect(bus === "amb" ? ambBus : rainBus);
+          layers[bus].push({ slug, src: loopSource(ctx, buffers[slug], g), gainNode: g });
+        }
+      });
+    }
+    function playAmb(slugs){ playBus("amb", Array.isArray(slugs) ? slugs : [slugs]); }
+    function playRain(slugs){ playBus("wx", Array.isArray(slugs) ? slugs : [slugs]); }
+    /* Which clips are live on a bus right now — used by verify.js to prove every
+       bundled asset is actually reachable. */
+    function activeOn(bus){ return layers[bus].map(L => L.slug); }
 
   /* =======================================================================
      SYNTHESISED MUSIC
@@ -441,7 +476,7 @@ const Audio_ = (() => {
   }
 
   return {
-    ensure, start, loadAsset, playAmb, playRain,
+    ensure, start, loadAsset, playAmb, playRain, activeOn, stopBus,
     setGain, setGains, setMaster, toggleMute, setStyle, setVerb, tick,
     get started(){ return started; },
     get muted(){ return muted; },

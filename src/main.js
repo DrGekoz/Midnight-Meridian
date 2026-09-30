@@ -40,6 +40,49 @@ function loadSettings(){
     return s;
   } catch (_) { return null; }
 }
+/* ---- AMBIENT CLIP SELECTION ----------------------------------------------
+   Every one of the 13 bundled clips must be reachable, or the 2 MB of audio
+   shipped in the file is dead weight. The first version only ever selected 5 of
+   them (rain, snow, wind, birds, city) and left fire, stream, waves, thunder,
+   clock and crowd unreachable.
+
+   Two independent buses, because they answer different questions:
+     - WEATHER bus: what is falling. Fires on rain/snow/storm only.
+     - SCENE bus:   where you are. Fires on every combination.
+   A storm gets rain AND thunder; a summer day gets birds AND a stream.       */
+function ambientFor(T){
+  const amb = [], wx = [];
+  if (T.weather === "rain"){
+    wx.push(T.style === "cyberpunk" ? "rain-heavy" : "rain");
+    /* thunder rides the storm bus so its gain follows the rain slider */
+    if (T.weather === "rain" && (T.season === "Summer" || T.style === "cyberpunk")) wx.push("thunder");
+  } else if (T.weather === "snow"){
+    wx.push("snow", "wind");
+  } else if (T.weather === "storm"){
+    wx.push("rain-heavy", "thunder", "wind");
+  }
+  /* the scene bed: one clip that places you somewhere */
+  if (T.style === "cyberpunk"){
+    amb.push(T.tod === "day" ? "crowd" : "city");
+  } else if (T.style === "japan"){
+    amb.push(T.tod === "day" ? "stream" : "crickets");
+  } else {
+    if (T.tod === "day") amb.push("birds");
+    else amb.push(T.season === "Winter" ? "wind" : "crickets");
+  }
+  /* winter nights get a fire somewhere off-frame, and lakes get water.
+     These are the two clips that have no season or style of their own, so they
+     are layered on top of the scene bed rather than replacing it. */
+  if (T.season === "Winter" && T.tod === "night") amb.push("fire");
+  if (T.season === "Summer" && T.tod === "day") amb.push("stream");
+  /* a clock is the clock-face of a scene: cyberpunk night only */
+  if (T.style === "cyberpunk" && T.tod === "night" && T.season === "Winter") amb.push("clock");
+  /* a lake is a lake, in every scene, unless it is raining on it */
+  if (T.weather !== "rain") amb.push("waves");
+  return { amb: dedupe(amb), wx: dedupe(wx) };
+}
+function dedupe(a){ return a.filter((v, i) => a.indexOf(v) === i); }
+
 function setTheme(themeId, seasonId, opts){
   const o = opts || {};
   const T = resolveTheme(themeId, seasonId || (typeof UI !== "undefined" && UI.season) || "summer");
@@ -49,14 +92,15 @@ function setTheme(themeId, seasonId, opts){
   /* Music follows the style; only parameters change, never the graph. */
   Audio_.setStyle(T.music);
   Audio_.setVerb(T.music.wet);
-  /* Ambient bus: one clip per weather, one per season/daylight. */
+  /* Ambient buses. Both are cleared first so switching from rain to clear
+     actually stops the rain instead of leaving it layered under the new bed. */
   if (typeof AUDIO_B64 !== "undefined" && AUDIO_B64){
-    const rainSlug = T.weather === "rain" ? "rain" : (T.weather === "snow" ? "snow" : null);
-    const ambSlug  = T.tod === "day"
-        ? (T.season === "Winter" ? "wind" : "birds")
-        : (T.style === "cyberpunk" ? "city" : (T.season === "Winter" ? "snow" : "crickets"));
-    Audio_.playRain(rainSlug);
-    Audio_.playAmb(ambSlug);
+    const pick = ambientFor(T);
+    /* the whole list goes to its bus in one call; playBus diffs against what is
+       already playing, so an unchanged scene is a no-op and a changed one
+       replaces cleanly rather than layering up over itself */
+    Audio_.playAmb(pick.amb);
+    Audio_.playRain(pick.wx);
   }
   if (!o.silent && typeof UI !== "undefined") UI.applyState();
   saveSettings();
