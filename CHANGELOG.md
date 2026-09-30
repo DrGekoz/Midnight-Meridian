@@ -6,6 +6,45 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [3.2.0] — 2026-10-01
+
+Layered ambient buses, and a real-browser check suite.
+
+### Added
+- **Layered ambient buses.** Each bus now holds a *list* of looping clips rather
+  than one. Layer 0 is the bed at full level; layers 1..n route through their own
+  gain node at 0.42 so a scene can be rain + thunder, or birds + stream + waves,
+  without the mix turning to mud. `playBus()` diffs the requested list against
+  what is already playing, so an unchanged scene is a genuine no-op and a
+  re-triggered 30 s loop file cannot click its seam.
+- **`tools/cdp_check.py`** — drives the shipped `index.html` in real Chrome over
+  the DevTools protocol. Asserts: zero console errors, the canvas covers the
+  viewport, nearest-neighbour sampling is active, every control the brief asks
+  for is present, a theme button actually changes the frame, and rAF is running.
+
+### Fixed
+- **Six of thirteen bundled clips were never played.** `fire`, `stream`, `waves`,
+  `thunder`, `clock` and `crowd` were fetched, licensed, base64-inlined into a
+  4 MB file, and unreachable — the selection logic only ever picked five of them.
+  Every clip is now reachable from some scene, and an assertion walks all 24
+  themes × 4 seasons to prove it.
+- **The piece opened silent.** `master` was `0` while `muted` was `true`, so
+  pressing play produced nothing: the music bus was up at 0.8 but the master was
+  at 0, and the panel showed a music slider at 80 beside a master at 0. `rain`
+  and `amb` also defaulted to 0. Defaults are now 80 / 80 / 55 / 45 / 70.
+  `muted` still starts true — that is the autoplay policy, not a volume bug.
+
+### Tests
+- **57 assertions** in `node verify.js`, plus 9 in `tools/cdp_check.py`.
+- Two browser assertions were themselves wrong on first run, and the *tests* were
+  fixed:
+  - *"every game pixel is square"* demanded an integer scale, but the piece
+    deliberately **covers** the viewport, so 480×270 in a 1588×808 window is
+    necessarily 3.308×. Nearest-neighbour sampling is the actual guarantee.
+  - *"rAF near 60fps"* failed at 177 fps because headless Chrome does not throttle
+    rAF to the display refresh. Asserting ≥ 30 catches a stall; the real 16.67 ms
+    budget is proven separately against the render cost.
+
 ## [3.1.0] — 2026-10-01
 
 The sixth parallax layer, weather-driven water, ground litter, and interaction.

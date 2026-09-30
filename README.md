@@ -58,7 +58,11 @@ sections, real song form, and drum grooves from **Bjorklund's Euclidean algorith
   silently discarded. It looked completely correct in the source.
 - **Bugs are caught by assertions written to catch them.** The ripple test
   asserts the ring *grows*, not that some pixels changed — a fixed threshold
-  would have passed a static sprite.
+  would have passed a static sprite. The clip-reachability test walks all 24
+  themes because six bundled recordings were, briefly, 2 MB of dead weight.
+- **It is tested in a real browser**, not just in a VM. `tools/cdp_check.py`
+  talks to Chrome over the DevTools protocol and asserts zero console errors,
+  true fullscreen coverage, and that a theme button really changes the frame.
 - **The music is a pure function.** It runs in Node with no `AudioContext`, which
   is why it can be unit-tested. The Euclidean generator has eight published test
   vectors and a sum invariant, because it was wrong three times first.
@@ -78,7 +82,8 @@ Everything is inlined. It works offline, from a USB stick, in a browser from 201
 ```
 python tools/fetch_audio.py     # re-fetch the ambient bed from Openverse
 python tools/build_single.py    # rebuild index.html from src/
-node verify.js                  # 52 assertions, including 96 loop proofs
+node verify.js                  # 55 assertions, including 96 loop proofs
+python tools/cdp_check.py      # 9 checks in REAL Chrome (needs --remote-debugging-port)
 node snap.js                    # render a theme contact sheet to PNG
 node diag-perf.js               # per-pass frame cost
 ```
