@@ -46,6 +46,7 @@ const SPD_MTNM   =  8;   // 0.50x
 const SPD_PINEF  = 12;   // 0.75x
 const SPD_PINEN  = 16;   // 1.00x
 const SPD_EMB    = 16;   // 1.00x  (ballast + rail, locked to the near forest)
+const SPD_POLES  = 24;   // 1.50x  (telegraph poles + catenary wire)
 const SPD_LAKE   = 20;   // 1.25x  (surface ripple layer only)
 const SPD_FORE   = 32;   // 2.00x  (near bank, puddles, reeds)
 
@@ -59,6 +60,11 @@ const EMB_Y0    = 146, EMB_H   = 22;  // 146..167 embankment, ballast, rail
 const LAKE_Y0   = 168, LAKE_H   = 72;  // 168..239 water
 const FOREP_Y0  = 206, FOREP_H  = 64;  // 206..269 near pines (foreground occluders)
 const FORE_Y0   = 240, FORE_H   = 30;  // 240..269 near bank, puddles, reeds
+/* The poles must stand PROUD of the train: the consist occupies y 123..166, so
+   a band starting at 118 left only 5 rows visible above the boiler and the wire
+   sag was hidden entirely behind the carriages. 84..147 puts the cross-arms and
+   the catenary clear of the silhouette, which is where they do their work. */
+const POLES_Y0  = 84, POLES_H  = 64;   // 84..147 telegraph poles + catenary wire
 const RAIL_Y    = 166;                 // rail head: the wheels rest here
 
 /* Reflection snapshot band: scene rows 30..167 inclusive. */
@@ -127,6 +133,12 @@ function defPal(o){ const P = {}; for (const k in o){ P[k] = _pack(o[k][0],o[k][
 let SKY, NEB, MOO, FARN, MIDN, PF, PN, GND, TRN, WAT;
 const WRM = defPal({ warm:[0xff,0xb1,0x4a], hot:[0xff,0xe0,0x9c], off:[0x0d,0x10,0x18] });
 const SMK = defPal({ low:[0x8a,0x7d,0x84], high:[0x6d,0x74,0x96], warm:[0xb0,0x9c,0x92] });
+/* Telegraph poles: weathered timber, dark wire, pale insulator tips. The tips
+   catch the moon and the headlamp, which is what stops the layer reading as a
+   black scribble across the sky. */
+const POL = defPal({ body:[0x2b,0x24,0x2a], lo:[0x1a,0x14,0x1c],
+                     wire:[0x22,0x1e,0x2c], wireLo:[0x16,0x13,0x20],
+                     tip:[0x8a,0x8e,0xa8], rim:[0x3a,0x30,0x38] });
 
 /* Point the working palette at a style's colours, with a day/night lift and a
    weather desaturation applied on top. This is the single place a theme changes
@@ -904,7 +916,7 @@ function buildWheelPhase(ph){
    the train appends to it, so it is cleared first and the count is asserted by
    verify.js to stay at 15.
    ========================================================================== */
-let S_SKY, S_MTNF, S_MTNM, S_PINEF, S_PINEN, S_EMB, S_FORE, S_REEDS, S_FPINE;
+let S_SKY, S_MTNF, S_MTNM, S_PINEF, S_PINEN, S_EMB, S_FORE, S_REEDS, S_FPINE, S_POLES;
 let TRAIN, WHEELS = [];
 const WINDOW_COUNT = 15;
 
@@ -928,6 +940,9 @@ function buildThemeStrips(T){
   S_MTNM  = buildRidge(MTNM_Y0, MTNM_H, 22, {pal:MIDN, baseCycles:2, octaves:5, sharp:2.4, lift:10, hazeRows:16});
   S_PINEF = buildForest(PINEF_Y0, PINEF_H, 33, 30, 14, 27, 5, far, farRim, PF.floor, T.bare);
     S_PINEN = buildForest(PINEN_Y0, PINEN_H, 44, 20, 18, 32, 6, near, nearRim, PN.floor, T.bare);
+  /* telegraph poles + catenary wire: 48px spacing over 480px = 10 poles, so the
+     strip tiles exactly and the parallax stays a single integer blit offset */
+  S_POLES = buildPoles(POLES_Y0, POLES_H, 77, 48, POL);
   S_EMB   = buildEmbankment();
   S_FORE  = buildForeBank();
   S_REEDS = buildReeds();
@@ -1455,10 +1470,23 @@ function drawWater(t, T){
    The two crumple sines are evaluated through the SIN table (they were raw
    Math.sin per pixel and dominated this pass at 6.9 ms). Their phase includes
    an integer-frequency term over the loop, so periodicity is preserved.      */
-function drawPuddles(t){
-  /* LOOP CRITICAL: same mod-VW rule as the starfield. SPD_FORE * 120 = 3840,
-     which is exactly 8 tiles, so the integer base must be reduced before use or
-     the two loop-boundary frames place each puddle on a different column. */
+/* --- PUDDLES: heavy-squash reflections on the near bank --------------------
+   Weather-driven. Puddles exist because it rained: they scale in with
+   `T.ripple`, freeze over in winter, and vanish under a clear sky. The user
+   brief asks specifically for puddles as a theme asset, so presence is gated on
+   the resolved theme rather than being unconditional as it was in v1..v3.
+
+   LOOP CRITICAL: same mod-VW rule as the starfield. SPD_FORE * 120 = 3840,
+   which is exactly 8 tiles, so the integer base must be reduced before use or
+   the two loop-boundary frames place each puddle on a different column.       */
+function drawPuddles(t, T){
+  /* Rain fills the puddles; a clear sky dries them; winter ices them over.
+     A puddle with no water in it is a dark stain, so scale the whole layer by
+     how much water is actually present. */
+  const wet = T.ripple || 0;
+  if (wet <= 0.01) return;
+  const iced = T.ice ? 0.55 : 1;                    // ice reads paler and flatter
+  const strength = Math.min(1, wet * 1.6) * iced;
   const offM = ((SPD_FORE * t) % VW + VW) % VW;
   const phC = TAU8 * 2*Math.PI*(t/LOOP_SECONDS);   // integer cycle 1 -> periodic
   for (let inst = -1; inst <= 1; inst++){
@@ -1488,12 +1516,19 @@ function drawPuddles(t){
         const tA = TAU8 * rA, tB = TAU8 * rB;
         for (let dx = -halfw; dx <= halfw; dx++){
           let x = (px0 + dx) % VW; if (x < 0) x += VW;
+          /* Gate on `strength`: a puddle under a clear sky is a dark stain, not
+             water, so pixels are skipped entirely rather than drawn faintly. This
+             keeps the layer absent when it should be, which is what the theme
+             buttons promise. */
+          if (bayer01(x, yy) >= strength) continue;
           const crum = Math.round(2.5 * SIN[(k55 * x + tA) & SIN_MASK]
                                + 1.4 * SIN[(k21 * x + tB) & SIN_MASK]);
           let sx2 = (x + crum) % VW; if (sx2 < 0) sx2 += VW;
           const c0 = SNAP[siOff + sx2];
           let r2 = (c0 & 255) * 0.44, g2 = ((c0 >>> 8) & 255) * 0.50, b2 = ((c0 >>> 16) & 255) * 0.66;
-          if (bayer01(x, yy) < 0.3) { r2 *= 0.84; g2 *= 0.9; b2 *= 0.98; }
+          /* winter: pull the reflection toward pale ice instead of a mirror */
+          if (T.ice){ r2 = r2 * 0.55 + 34; g2 = g2 * 0.55 + 42; b2 = b2 * 0.50 + 56; }
+          if (bayer01(x, yy + 1) < 0.3) { r2 *= 0.84; g2 *= 0.9; b2 *= 0.98; }
           fb[yy*VW + x] = PACK_FAST(r2, g2, b2);
           /* 1px meniscus: the lit top edge of the puddle */
           if (r === 0) fb[yy*VW + x] = mixC(fb[yy*VW + x], WAT.rim, 0.75);
@@ -1560,6 +1595,7 @@ function render(tIn, T){
          through. blitStrip with opaque:true would write those transparent slots
          as literal 0x000000, punching black holes along the crest. The band is
          still fully covered because the sky base plate is underneath it. */
+  blitStrip(S_POLES, POLES_Y0,  SPD_POLES * t, false);
   blitStrip(S_EMB,   EMB_Y0,   SPD_EMB   * t, false);
 
   /* --- 7. the train (camera-locked) and everything it lights */
@@ -1583,7 +1619,10 @@ function render(tIn, T){
   blitStrip(S_FPINE, FOREP_Y0, SPD_FORE * t, false);
   blitStrip(S_FORE,  FORE_Y0,  SPD_FORE * t, false);
   blitStrip(S_REEDS, FORE_Y0,  SPD_FORE * t, false);
-  drawPuddles(t);
+  drawPuddles(t, T);
+  /* Litter goes AFTER the foreground pines. Drawn before them it was hidden
+     behind 64px of occluding conifer and read as "no leaf litter at all". */
+  drawGroundLitter(t, T);
   drawSpringDetail(t, T);
   drawLeafFall(t, T);
   drawLightShafts(t, T);

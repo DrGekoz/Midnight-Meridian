@@ -432,6 +432,7 @@ const SPD_MTNM   =  8;   // 0.50x
 const SPD_PINEF  = 12;   // 0.75x
 const SPD_PINEN  = 16;   // 1.00x
 const SPD_EMB    = 16;   // 1.00x  (ballast + rail, locked to the near forest)
+const SPD_POLES  = 24;   // 1.50x  (telegraph poles + catenary wire)
 const SPD_LAKE   = 20;   // 1.25x  (surface ripple layer only)
 const SPD_FORE   = 32;   // 2.00x  (near bank, puddles, reeds)
 
@@ -445,6 +446,11 @@ const EMB_Y0    = 146, EMB_H   = 22;  // 146..167 embankment, ballast, rail
 const LAKE_Y0   = 168, LAKE_H   = 72;  // 168..239 water
 const FOREP_Y0  = 206, FOREP_H  = 64;  // 206..269 near pines (foreground occluders)
 const FORE_Y0   = 240, FORE_H   = 30;  // 240..269 near bank, puddles, reeds
+/* The poles must stand PROUD of the train: the consist occupies y 123..166, so
+   a band starting at 118 left only 5 rows visible above the boiler and the wire
+   sag was hidden entirely behind the carriages. 84..147 puts the cross-arms and
+   the catenary clear of the silhouette, which is where they do their work. */
+const POLES_Y0  = 84, POLES_H  = 64;   // 84..147 telegraph poles + catenary wire
 const RAIL_Y    = 166;                 // rail head: the wheels rest here
 
 /* Reflection snapshot band: scene rows 30..167 inclusive. */
@@ -513,6 +519,12 @@ function defPal(o){ const P = {}; for (const k in o){ P[k] = _pack(o[k][0],o[k][
 let SKY, NEB, MOO, FARN, MIDN, PF, PN, GND, TRN, WAT;
 const WRM = defPal({ warm:[0xff,0xb1,0x4a], hot:[0xff,0xe0,0x9c], off:[0x0d,0x10,0x18] });
 const SMK = defPal({ low:[0x8a,0x7d,0x84], high:[0x6d,0x74,0x96], warm:[0xb0,0x9c,0x92] });
+/* Telegraph poles: weathered timber, dark wire, pale insulator tips. The tips
+   catch the moon and the headlamp, which is what stops the layer reading as a
+   black scribble across the sky. */
+const POL = defPal({ body:[0x2b,0x24,0x2a], lo:[0x1a,0x14,0x1c],
+                     wire:[0x22,0x1e,0x2c], wireLo:[0x16,0x13,0x20],
+                     tip:[0x8a,0x8e,0xa8], rim:[0x3a,0x30,0x38] });
 
 /* Point the working palette at a style's colours, with a day/night lift and a
    weather desaturation applied on top. This is the single place a theme changes
@@ -1290,7 +1302,7 @@ function buildWheelPhase(ph){
    the train appends to it, so it is cleared first and the count is asserted by
    verify.js to stay at 15.
    ========================================================================== */
-let S_SKY, S_MTNF, S_MTNM, S_PINEF, S_PINEN, S_EMB, S_FORE, S_REEDS, S_FPINE;
+let S_SKY, S_MTNF, S_MTNM, S_PINEF, S_PINEN, S_EMB, S_FORE, S_REEDS, S_FPINE, S_POLES;
 let TRAIN, WHEELS = [];
 const WINDOW_COUNT = 15;
 
@@ -1314,6 +1326,9 @@ function buildThemeStrips(T){
   S_MTNM  = buildRidge(MTNM_Y0, MTNM_H, 22, {pal:MIDN, baseCycles:2, octaves:5, sharp:2.4, lift:10, hazeRows:16});
   S_PINEF = buildForest(PINEF_Y0, PINEF_H, 33, 30, 14, 27, 5, far, farRim, PF.floor, T.bare);
     S_PINEN = buildForest(PINEN_Y0, PINEN_H, 44, 20, 18, 32, 6, near, nearRim, PN.floor, T.bare);
+  /* telegraph poles + catenary wire: 48px spacing over 480px = 10 poles, so the
+     strip tiles exactly and the parallax stays a single integer blit offset */
+  S_POLES = buildPoles(POLES_Y0, POLES_H, 77, 48, POL);
   S_EMB   = buildEmbankment();
   S_FORE  = buildForeBank();
   S_REEDS = buildReeds();
@@ -1841,10 +1856,23 @@ function drawWater(t, T){
    The two crumple sines are evaluated through the SIN table (they were raw
    Math.sin per pixel and dominated this pass at 6.9 ms). Their phase includes
    an integer-frequency term over the loop, so periodicity is preserved.      */
-function drawPuddles(t){
-  /* LOOP CRITICAL: same mod-VW rule as the starfield. SPD_FORE * 120 = 3840,
-     which is exactly 8 tiles, so the integer base must be reduced before use or
-     the two loop-boundary frames place each puddle on a different column. */
+/* --- PUDDLES: heavy-squash reflections on the near bank --------------------
+   Weather-driven. Puddles exist because it rained: they scale in with
+   `T.ripple`, freeze over in winter, and vanish under a clear sky. The user
+   brief asks specifically for puddles as a theme asset, so presence is gated on
+   the resolved theme rather than being unconditional as it was in v1..v3.
+
+   LOOP CRITICAL: same mod-VW rule as the starfield. SPD_FORE * 120 = 3840,
+   which is exactly 8 tiles, so the integer base must be reduced before use or
+   the two loop-boundary frames place each puddle on a different column.       */
+function drawPuddles(t, T){
+  /* Rain fills the puddles; a clear sky dries them; winter ices them over.
+     A puddle with no water in it is a dark stain, so scale the whole layer by
+     how much water is actually present. */
+  const wet = T.ripple || 0;
+  if (wet <= 0.01) return;
+  const iced = T.ice ? 0.55 : 1;                    // ice reads paler and flatter
+  const strength = Math.min(1, wet * 1.6) * iced;
   const offM = ((SPD_FORE * t) % VW + VW) % VW;
   const phC = TAU8 * 2*Math.PI*(t/LOOP_SECONDS);   // integer cycle 1 -> periodic
   for (let inst = -1; inst <= 1; inst++){
@@ -1874,12 +1902,19 @@ function drawPuddles(t){
         const tA = TAU8 * rA, tB = TAU8 * rB;
         for (let dx = -halfw; dx <= halfw; dx++){
           let x = (px0 + dx) % VW; if (x < 0) x += VW;
+          /* Gate on `strength`: a puddle under a clear sky is a dark stain, not
+             water, so pixels are skipped entirely rather than drawn faintly. This
+             keeps the layer absent when it should be, which is what the theme
+             buttons promise. */
+          if (bayer01(x, yy) >= strength) continue;
           const crum = Math.round(2.5 * SIN[(k55 * x + tA) & SIN_MASK]
                                + 1.4 * SIN[(k21 * x + tB) & SIN_MASK]);
           let sx2 = (x + crum) % VW; if (sx2 < 0) sx2 += VW;
           const c0 = SNAP[siOff + sx2];
           let r2 = (c0 & 255) * 0.44, g2 = ((c0 >>> 8) & 255) * 0.50, b2 = ((c0 >>> 16) & 255) * 0.66;
-          if (bayer01(x, yy) < 0.3) { r2 *= 0.84; g2 *= 0.9; b2 *= 0.98; }
+          /* winter: pull the reflection toward pale ice instead of a mirror */
+          if (T.ice){ r2 = r2 * 0.55 + 34; g2 = g2 * 0.55 + 42; b2 = b2 * 0.50 + 56; }
+          if (bayer01(x, yy + 1) < 0.3) { r2 *= 0.84; g2 *= 0.9; b2 *= 0.98; }
           fb[yy*VW + x] = PACK_FAST(r2, g2, b2);
           /* 1px meniscus: the lit top edge of the puddle */
           if (r === 0) fb[yy*VW + x] = mixC(fb[yy*VW + x], WAT.rim, 0.75);
@@ -1946,6 +1981,7 @@ function render(tIn, T){
          through. blitStrip with opaque:true would write those transparent slots
          as literal 0x000000, punching black holes along the crest. The band is
          still fully covered because the sky base plate is underneath it. */
+  blitStrip(S_POLES, POLES_Y0,  SPD_POLES * t, false);
   blitStrip(S_EMB,   EMB_Y0,   SPD_EMB   * t, false);
 
   /* --- 7. the train (camera-locked) and everything it lights */
@@ -1969,7 +2005,10 @@ function render(tIn, T){
   blitStrip(S_FPINE, FOREP_Y0, SPD_FORE * t, false);
   blitStrip(S_FORE,  FORE_Y0,  SPD_FORE * t, false);
   blitStrip(S_REEDS, FORE_Y0,  SPD_FORE * t, false);
-  drawPuddles(t);
+  drawPuddles(t, T);
+  /* Litter goes AFTER the foreground pines. Drawn before them it was hidden
+     behind 64px of occluding conifer and read as "no leaf litter at all". */
+  drawGroundLitter(t, T);
   drawSpringDetail(t, T);
   drawLeafFall(t, T);
   drawLightShafts(t, T);
@@ -2358,6 +2397,131 @@ function drawSpringDetail(t, T){
     if (rnd() > 0.6) addPix(x, y - 1, 226, 130, 176);
   }
 }
+/* --- ground litter: leaves lying where they fell, moss, and river stones.
+     The user brief asks for "leaves on the ground" as a distinct asset, and the
+     season palette already carried a `ground.litter` colour that nothing ever
+     read. Drawn AFTER the puddles so litter sits on top of wet ground, and only
+     where the near bank actually is. */
+function drawGroundLitter(t, T){
+  const g = T.ground;
+  if (!g) return;
+  const rnd = mulberry32(31337);
+  const off = ((SPD_FORE * t) % VW + VW) % VW;
+  const base = Math.floor(off);
+
+  /* scattered moss/grass tufts year round — a bare bank reads as unfinished.
+     NOTE the Math.floor on x: rnd() returns a FRACTION, and `fb[333.35 * VW + y]`
+     writes to a non-integer index, which is silently discarded. Without the
+     floor the whole pass is a no-op that still looks correct in the source. */
+  for (let i = 0; i < 90; i++){
+    const x = Math.floor(((rnd() * VW + base) % VW + VW) % VW);
+    const y = FORE_Y0 + 3 + Math.floor(rnd() * (FORE_H - 6));
+    const tall = rnd() > 0.72;
+    addPix(x, y, _cr(g.grass) * 0.55, _cg(g.grass) * 0.55, _cb(g.grass) * 0.55);
+    if (tall) addPix(x, y - 1, _cr(g.grass) * 0.42, _cg(g.grass) * 0.42, _cb(g.grass) * 0.42);
+  }
+
+  /* autumn litter: a carpet of fallen leaves, warm and dense.
+     The first attempt scattered `fallLeaves * 2.6` single pixels over the whole
+     480px band and the reviewer saw "no leaf litter at all" — at ~1 leaf per 70
+     px of ground it simply is not a carpet. It is now drawn in CLUSTERS along
+     drift lines (leaves collect against the grass and the bank edge), which is
+     both more realistic and far more legible at this resolution. */
+  if (T.fallLeaves > 0){
+    const clusters = Math.round(14 + T.fallLeaves * 26);
+    for (let cI = 0; cI < clusters; cI++){
+      const cx = rnd() * VW;
+      const cy = FORE_Y0 + 2 + rnd() * (FORE_H - 6);
+      const n  = 2 + Math.floor(rnd() * 5);
+      for (let i = 0; i < n; i++){
+        const x = Math.floor(((cx + (rnd() - 0.5) * 26 + base) % VW + VW) % VW);
+        const y = cy + ((rnd() - 0.5) * 5) | 0;
+        if (y < FORE_Y0 || y >= FORE_Y0 + FORE_H) continue;
+        const k = 0.45 + rnd() * 0.6;
+        addPix(x, y, _cr(g.litter) * k, _cg(g.litter) * k, _cb(g.litter) * k);
+        /* a 2px leaf, lying horizontally the way a fallen leaf settles */
+        if (rnd() > 0.5) addPix(x + 1, y, _cr(g.litter) * k * 0.8,
+                                   _cg(g.litter) * k * 0.8, _cb(g.litter) * k * 0.8);
+      }
+    }
+  }
+
+  /* spring: blossoms dropped onto the grass */
+  if (T.blossom){
+    for (let i = 0; i < 26; i++){
+      const x = Math.floor(((rnd() * VW + base) % VW + VW) % VW);
+      const y = FORE_Y0 + 2 + Math.floor(rnd() * (FORE_H - 8));
+      addPix(x, y, 226, 150, 186);
+    }
+  }
+
+  /* winter: a thin rime of frost caught in the grass, no leaves at all */
+  if (T.ice){
+    for (let i = 0; i < 70; i++){
+      const x = Math.floor(((rnd() * VW + base) % VW + VW) % VW);
+      const y = FORE_Y0 + 2 + Math.floor(rnd() * (FORE_H - 6));
+      addPix(x, y, 58, 66, 82);
+    }
+  }
+
+  /* river stones along the waterline — they mark where the bank meets the lake
+     and give the shoreline a hard edge instead of a soft blur */
+  for (let i = 0; i < 22; i++){
+    const x = Math.floor(((rnd() * VW + base) % VW + VW) % VW);
+    const y = FORE_Y0 + FORE_H - 2 - Math.floor(rnd() * 3);
+    const s = rnd() > 0.5;
+    addPix(x, y, s ? 74 : 58, s ? 78 : 64, s ? 88 : 76);
+  }
+}
+
+/* --- TELEGRAPH POLES + CATENARY WIRE — the sixth parallax layer ------------
+     Wires are the thing that sells a railway scene: they cut the sky into
+     receding bands and give the eye a sense of speed that the ground alone
+     cannot. They sit between the near forest and the embankment, so they are
+     IN FRONT of the trees and BEHIND the train.
+
+     Built as a repeating strip so the parallax is a single integer blit offset,
+     exactly like every other layer. The pole spacing must divide VW evenly or
+     the strip tears at the wrap; 48 px spacing over 480 px = 10 poles.         */
+/* The strip's bottom row sits on the embankment crest, so the mast runs the full
+     height of the band and the cross-arms sit in its upper third. Drawing only
+     the top 30 rows would leave the poles floating with no visible base. */
+function buildPoles(y0, h, seed, spacing, pal){
+  const s = newStrip(VW, h);
+  const rnd = mulberry32(seed);
+  const armY = Math.round(h * 0.22);        // top cross-arm
+  const armY2 = Math.round(h * 0.44);       // lower cross-arm
+  for (let x = 0; x < VW; x += spacing){
+    const px = x;
+    /* the mast: 1px wide with a 3px shoulder just below each cross-arm, so the
+       silhouette has a little structure instead of being a bare line */
+    for (let y = 0; y < h; y++){
+      sput(s, px, y, pal.lo);
+      /* a 3px shoulder just below each cross-arm, so the silhouette has some
+         structure instead of being a bare line */
+      if (y === armY + 1 || y === armY2 + 1){ sput(s, px - 1, y, pal.body); sput(s, px + 1, y, pal.body); }
+    }
+    /* the moonlit edge: 1px on the left of the mast */
+    for (let y = 0; y < h; y++) sput(s, px - 1, y, pal.rim);
+    /* one, two or three wires strung between this pole and the next. They hang from
+       the INSULATOR TIPS, so their height is the arm height plus the tip, not an
+       arbitrary constant — otherwise they float away from the pole as `h` grows. */
+    const wires = 2 + (rnd() > 0.55 ? 1 : 0);
+    for (let wI = 0; wI < wires; wI++){
+      const yTop = (wI === 0 ? armY : wI === 1 ? armY2 : Math.round(h * 0.11)) - 1;
+      /* a catenary sags toward the middle of the span */
+      const sag = 2 + wI;
+      for (let dx = 0; dx < spacing; dx++){
+        const u = dx / spacing;
+        const sagY = Math.round(sag * (1 - Math.pow(2*u - 1, 2)));
+        const y = yTop + sagY;
+        if (y < h) sput(s, px + dx, y, dx % 7 === 0 ? pal.wire : pal.wireLo);
+      }
+    }
+  }
+  return s;
+}
+
 /* --- Autumn leaf fall + winter fireflies.
      Replaces the old behaviour where falling leaves were handled inside
      drawPrecip, which meant they were white specks over the whole frame. Leaves

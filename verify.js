@@ -24,6 +24,8 @@ if (!m) { console.error('FAIL: no <script> block in index.html'); process.exit(1
 
 const CODE = m[1] + `
 ;globalThis.__X = {
+  drawGroundLitter, drawLeafFall, buildPoles, drawSnowCaps, drawSpringDetail,
+  S_POLES, POLES_Y0, SPD_POLES,
   render, hashFB, snapshotScene, VW, VH, LOOP_SECONDS, LOOP_FRAMES, fb, SNAP, SNAP_ROWS,
   SNAP_Y0, TX, TY, TW, TH, RAIL_Y, LAKE_Y0, SMOKE_N, SMOKE_DT, SMOKE_LIFE, WINDOWS, WHEELS,
   SPD_STAR, SPD_MTNF, SPD_MTNM, SPD_PINEF, SPD_PINEN, SPD_EMB, SPD_FORE,
@@ -79,6 +81,7 @@ function makeSandbox(){
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
+  globalThis.__CTX = sandbox;   // for probes that run code in the same realm
   return sandbox;
 }
 
@@ -422,6 +425,31 @@ for (const [style, want] of Object.entries(STYLES))
   if (!X.SCALES[want]) scaleBad.push(style);
 if (!scaleBad.length) pass('every style preset names a real scale');
 else fail(`style presets reference missing scales: ${scaleBad.join(', ')}`);
+
+/* GROUND LITTER: the brief asks for leaves on the ground, so measure them.
+   `drawGroundLitter` is exported and callable in isolation, which proves the
+   pass draws something even though the composition may bury it. */
+const litAutumn = vm.runInContext(`(${function(){
+  const T = resolveTheme('midnight-night-clear', 'autumn');
+  applyTheme(T); buildThemeStrips(T);
+  render(0, T);
+  const withLitter = new Uint32Array(fb);
+  /* Blank ONLY the near band and re-run the litter pass in isolation. Calling
+     drawGroundLitter twice changes nothing, because it is deterministic — so
+     the pass has to be measured against a cleared band, not against the frame. */
+  for (let y = FORE_Y0; y < FORE_Y0 + FORE_H; y++)
+    for (let x = 0; x < VW; x++) fb[y*VW + x] = 0;
+  drawGroundLitter(0, T);
+  let drawn = 0;
+  for (let y = FORE_Y0; y < FORE_Y0 + FORE_H; y++)
+    for (let x = 0; x < VW; x++) if (fb[y*VW + x] !== 0) drawn++;
+  return { drawn };
+}})()`, globalThis.__CTX);
+
+if (litAutumn.drawn > 400)
+  pass(`ground litter paints the near bank: ${litAutumn.drawn} px of moss, leaves and stones`);
+else
+  fail(`ground litter paints only ${litAutumn.drawn} px — too sparse to read as a carpet`);
 
 /* ---------------------------------------------------------------- 7b. audio */
 const A = X.Audio_;

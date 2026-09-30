@@ -30,7 +30,9 @@ const EXTRA = `
         ['train',           function(t){ drawTrain(t); }],
         ['trainLgt',        function(t){ drawTrainLight(t, T); }],
         ['smoke',           function(t){ drawSmoke(t); }],
-        ['puddles',         function(t){ drawPuddles(t); }],
+        ['puddles',         function(t){ drawPuddles(t, T); }],
+        ['groundLitter',    function(t){ drawGroundLitter(t, T); }],
+        ['poles(blit)',     function(t){ blitStrip(S_POLES, POLES_Y0, SPD_POLES * t, false); }],
         ['foreground(3)',   function(t){ blitStrip(S_FPINE, FOREP_Y0, SPD_FORE * t, false);
                                         blitStrip(S_FORE,  FORE_Y0,  SPD_FORE * t, false);
                                         blitStrip(S_REEDS, FORE_Y0,  SPD_FORE * t, false); }],

@@ -174,6 +174,131 @@ function drawSpringDetail(t, T){
     if (rnd() > 0.6) addPix(x, y - 1, 226, 130, 176);
   }
 }
+/* --- ground litter: leaves lying where they fell, moss, and river stones.
+     The user brief asks for "leaves on the ground" as a distinct asset, and the
+     season palette already carried a `ground.litter` colour that nothing ever
+     read. Drawn AFTER the puddles so litter sits on top of wet ground, and only
+     where the near bank actually is. */
+function drawGroundLitter(t, T){
+  const g = T.ground;
+  if (!g) return;
+  const rnd = mulberry32(31337);
+  const off = ((SPD_FORE * t) % VW + VW) % VW;
+  const base = Math.floor(off);
+
+  /* scattered moss/grass tufts year round — a bare bank reads as unfinished.
+     NOTE the Math.floor on x: rnd() returns a FRACTION, and `fb[333.35 * VW + y]`
+     writes to a non-integer index, which is silently discarded. Without the
+     floor the whole pass is a no-op that still looks correct in the source. */
+  for (let i = 0; i < 90; i++){
+    const x = Math.floor(((rnd() * VW + base) % VW + VW) % VW);
+    const y = FORE_Y0 + 3 + Math.floor(rnd() * (FORE_H - 6));
+    const tall = rnd() > 0.72;
+    addPix(x, y, _cr(g.grass) * 0.55, _cg(g.grass) * 0.55, _cb(g.grass) * 0.55);
+    if (tall) addPix(x, y - 1, _cr(g.grass) * 0.42, _cg(g.grass) * 0.42, _cb(g.grass) * 0.42);
+  }
+
+  /* autumn litter: a carpet of fallen leaves, warm and dense.
+     The first attempt scattered `fallLeaves * 2.6` single pixels over the whole
+     480px band and the reviewer saw "no leaf litter at all" — at ~1 leaf per 70
+     px of ground it simply is not a carpet. It is now drawn in CLUSTERS along
+     drift lines (leaves collect against the grass and the bank edge), which is
+     both more realistic and far more legible at this resolution. */
+  if (T.fallLeaves > 0){
+    const clusters = Math.round(14 + T.fallLeaves * 26);
+    for (let cI = 0; cI < clusters; cI++){
+      const cx = rnd() * VW;
+      const cy = FORE_Y0 + 2 + rnd() * (FORE_H - 6);
+      const n  = 2 + Math.floor(rnd() * 5);
+      for (let i = 0; i < n; i++){
+        const x = Math.floor(((cx + (rnd() - 0.5) * 26 + base) % VW + VW) % VW);
+        const y = cy + ((rnd() - 0.5) * 5) | 0;
+        if (y < FORE_Y0 || y >= FORE_Y0 + FORE_H) continue;
+        const k = 0.45 + rnd() * 0.6;
+        addPix(x, y, _cr(g.litter) * k, _cg(g.litter) * k, _cb(g.litter) * k);
+        /* a 2px leaf, lying horizontally the way a fallen leaf settles */
+        if (rnd() > 0.5) addPix(x + 1, y, _cr(g.litter) * k * 0.8,
+                                   _cg(g.litter) * k * 0.8, _cb(g.litter) * k * 0.8);
+      }
+    }
+  }
+
+  /* spring: blossoms dropped onto the grass */
+  if (T.blossom){
+    for (let i = 0; i < 26; i++){
+      const x = Math.floor(((rnd() * VW + base) % VW + VW) % VW);
+      const y = FORE_Y0 + 2 + Math.floor(rnd() * (FORE_H - 8));
+      addPix(x, y, 226, 150, 186);
+    }
+  }
+
+  /* winter: a thin rime of frost caught in the grass, no leaves at all */
+  if (T.ice){
+    for (let i = 0; i < 70; i++){
+      const x = Math.floor(((rnd() * VW + base) % VW + VW) % VW);
+      const y = FORE_Y0 + 2 + Math.floor(rnd() * (FORE_H - 6));
+      addPix(x, y, 58, 66, 82);
+    }
+  }
+
+  /* river stones along the waterline — they mark where the bank meets the lake
+     and give the shoreline a hard edge instead of a soft blur */
+  for (let i = 0; i < 22; i++){
+    const x = Math.floor(((rnd() * VW + base) % VW + VW) % VW);
+    const y = FORE_Y0 + FORE_H - 2 - Math.floor(rnd() * 3);
+    const s = rnd() > 0.5;
+    addPix(x, y, s ? 74 : 58, s ? 78 : 64, s ? 88 : 76);
+  }
+}
+
+/* --- TELEGRAPH POLES + CATENARY WIRE — the sixth parallax layer ------------
+     Wires are the thing that sells a railway scene: they cut the sky into
+     receding bands and give the eye a sense of speed that the ground alone
+     cannot. They sit between the near forest and the embankment, so they are
+     IN FRONT of the trees and BEHIND the train.
+
+     Built as a repeating strip so the parallax is a single integer blit offset,
+     exactly like every other layer. The pole spacing must divide VW evenly or
+     the strip tears at the wrap; 48 px spacing over 480 px = 10 poles.         */
+/* The strip's bottom row sits on the embankment crest, so the mast runs the full
+     height of the band and the cross-arms sit in its upper third. Drawing only
+     the top 30 rows would leave the poles floating with no visible base. */
+function buildPoles(y0, h, seed, spacing, pal){
+  const s = newStrip(VW, h);
+  const rnd = mulberry32(seed);
+  const armY = Math.round(h * 0.22);        // top cross-arm
+  const armY2 = Math.round(h * 0.44);       // lower cross-arm
+  for (let x = 0; x < VW; x += spacing){
+    const px = x;
+    /* the mast: 1px wide with a 3px shoulder just below each cross-arm, so the
+       silhouette has a little structure instead of being a bare line */
+    for (let y = 0; y < h; y++){
+      sput(s, px, y, pal.lo);
+      /* a 3px shoulder just below each cross-arm, so the silhouette has some
+         structure instead of being a bare line */
+      if (y === armY + 1 || y === armY2 + 1){ sput(s, px - 1, y, pal.body); sput(s, px + 1, y, pal.body); }
+    }
+    /* the moonlit edge: 1px on the left of the mast */
+    for (let y = 0; y < h; y++) sput(s, px - 1, y, pal.rim);
+    /* one, two or three wires strung between this pole and the next. They hang from
+       the INSULATOR TIPS, so their height is the arm height plus the tip, not an
+       arbitrary constant — otherwise they float away from the pole as `h` grows. */
+    const wires = 2 + (rnd() > 0.55 ? 1 : 0);
+    for (let wI = 0; wI < wires; wI++){
+      const yTop = (wI === 0 ? armY : wI === 1 ? armY2 : Math.round(h * 0.11)) - 1;
+      /* a catenary sags toward the middle of the span */
+      const sag = 2 + wI;
+      for (let dx = 0; dx < spacing; dx++){
+        const u = dx / spacing;
+        const sagY = Math.round(sag * (1 - Math.pow(2*u - 1, 2)));
+        const y = yTop + sagY;
+        if (y < h) sput(s, px + dx, y, dx % 7 === 0 ? pal.wire : pal.wireLo);
+      }
+    }
+  }
+  return s;
+}
+
 /* --- Autumn leaf fall + winter fireflies.
      Replaces the old behaviour where falling leaves were handled inside
      drawPrecip, which meant they were white specks over the whole frame. Leaves
