@@ -30,7 +30,15 @@ is sampling the actual framebuffer, not a pre-baked fake.
 Change the scene and the whole world rebuilds: **3 styles × day/night × 4 weather
 × 4 seasons**. Midnight gets a starfield and a moon. Day gets a real sun and
 green trees. Winter strips the conifers to bare branches and lays snow on the
-embankment. Autumn drops amber leaves that tumble as they fall.
+embankment. Autumn drops amber leaves that tumble as they fall and carpet the
+near bank. Rain fills the puddles and roughens the lake; snow ices it over.
+
+Six parallax layers — stars, two mountain ranges, two pine lines, and telegraph
+poles with sagging catenary wire at 1.50×. The poles are what make it read as
+speed rather than as a panning image.
+
+**Click the water** and a ring expands across it. Click the sky and nothing
+happens.
 
 The music is not a loop and it is not a sample. It is composed when you press play
 — chord progressions from a functional-harmony table, a motif that develops across
@@ -42,6 +50,15 @@ sections, real song form, and drum grooves from **Bjorklund's Euclidean algorith
 - **A perfect 120-second loop** across 96 scene variants, verified pixel-for-pixel.
 - **The train faces the right way.** There is a six-assertion test for this,
   because it was wrong once and a bounding-box check would not have caught it.
+- **Sixth parallax layer** — telegraph poles and catenary wire, tiling exactly
+  (480 px / 48 px spacing = 10 poles) so the strip cannot tear at the wrap.
+- **One silent no-op, found by measurement.** The ground-litter pass ran 200+
+  iterations a frame and drew exactly zero pixels, because `rnd()` returns a
+  fraction and `fb[333.35 * VW + y]` writes to a non-integer index, which is
+  silently discarded. It looked completely correct in the source.
+- **Bugs are caught by assertions written to catch them.** The ripple test
+  asserts the ring *grows*, not that some pixels changed — a fixed threshold
+  would have passed a static sprite.
 - **The music is a pure function.** It runs in Node with no `AudioContext`, which
   is why it can be unit-tested. The Euclidean generator has eight published test
   vectors and a sum invariant, because it was wrong three times first.
@@ -61,7 +78,7 @@ Everything is inlined. It works offline, from a USB stick, in a browser from 201
 ```
 python tools/fetch_audio.py     # re-fetch the ambient bed from Openverse
 python tools/build_single.py    # rebuild index.html from src/
-node verify.js                  # 45 assertions, including 96 loop proofs
+node verify.js                  # 52 assertions, including 96 loop proofs
 node snap.js                    # render a theme contact sheet to PNG
 node diag-perf.js               # per-pass frame cost
 ```

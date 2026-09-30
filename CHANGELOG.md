@@ -6,7 +6,61 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [3.1.0] — 2026-10-01
+
+The sixth parallax layer, weather-driven water, ground litter, and interaction.
+
+### Added
+- **Telegraph poles + catenary wire** — a sixth parallax layer at 1.50×, between
+  the near forest and the embankment. Strips tile exactly (480 px / 48 px
+  spacing = 10 poles), so the layer cannot tear at the wrap. Cross-arm heights
+  derive from the band height and wires hang from the insulator tips, so the
+  geometry stays attached if `POLES_H` ever changes.
+- **Weather-driven puddles.** Previously unconditional. They now scale with
+  `T.ripple`, ice over in winter, and vanish under a clear sky.
+- **Ground litter.** The season palette carried a `ground.litter` colour since
+  v2 that nothing read. Leaves, moss tufts, river stones and spring blossom are
+  now drawn on the near bank in clusters, after the foreground pines.
+- **Train wake ripples.** Two crossing wave trains on the water, integer loop
+  harmonics only, so the wake closes exactly.
+- **Click ripples.** Click the water, an expanding ring appears. Click the sky,
+  nothing. Ripples are an overlay drawn *after* `render()`, never inside it.
+- **Settings persistence.** Theme, season and audio gains survive a reload via
+  `localStorage`, with full validation on load and every access wrapped.
+- **`prefers-reduced-motion`** — the piece opens paused.
+
+### Fixed
+- **The ground-litter pass drew exactly zero pixels.** `rnd()` returns a
+  fraction and `fb[333.35 * VW + y]` writes to a non-integer index, which is
+  silently discarded; every `x` in the pass lacked a `Math.floor`. The pass ran
+  200+ iterations per frame producing nothing, and read as correct in source.
+  `0 px → 5557 px`.
+- **Poles were hidden behind the train.** The band started at y=118 while the
+  consist occupies 123..166, leaving 5 visible rows and no visible wire sag.
+  Moved to y=84..147.
+- **Litter was buried.** Drawn before the 64 px foreground conifer layer, it was
+  invisible even once it drew.
+
+### Performance
+- Wake `2.56 ms → 0.10 ms` — `Math.ceil` ran once per pixel; it depends only on
+  the row. Whole frame `11.50 ms` of a 16.67 ms budget.
+
+### Tests
+- **52 assertions**, up from 45. New: sixth-layer presence and tiling, ripple
+  expansion (107 px at 0.35 s → 143 px at 1.2 s, sky clicks ignored), ripple
+  expiry, and ground-litter coverage measured in isolation against a cleared
+  band — the pass is deterministic, so a second call after `render()` legitimately
+  changes nothing, which is exactly what made the no-op look like a test bug.
+- The ripple assertion tests **growth**, not pixel count. A fixed threshold would
+  pass a static sprite.
+
+### Notes
+- Depth-shear reflections were **not** implemented. The existing reflection
+  already applies 1.9× vertical compression and per-row horizontal wobble; a
+  per-column shear would need `t` inside the water loop and risked the
+  bit-exact loop proof for no visible gain at this resolution.
+
+## [3.0.0] — 2026-10-01
 
 ### Added
 - Nothing yet.
