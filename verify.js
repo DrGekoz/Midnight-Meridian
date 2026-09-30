@@ -27,6 +27,7 @@ const CODE = m[1] + `
   drawGroundLitter, drawLeafFall, buildPoles, drawSnowCaps, drawSpringDetail,
   S_POLES, POLES_Y0, SPD_POLES, drawWake, dropRipple, drawRipples,
   ripples, RIP_MAX, saveSettings, loadSettings, Audio_, ambientFor, AUDIO_B64,
+  S_PINEN,
   render, hashFB, snapshotScene, VW, VH, LOOP_SECONDS, LOOP_FRAMES, fb, SNAP, SNAP_ROWS,
   SNAP_Y0, TX, TY, TW, TH, RAIL_Y, LAKE_Y0, SMOKE_N, SMOKE_DT, SMOKE_LIFE, WINDOWS, WHEELS,
   SPD_STAR, SPD_MTNF, SPD_MTNM, SPD_PINEF, SPD_PINEN, SPD_EMB, SPD_FORE,
@@ -309,6 +310,38 @@ const sSummerNight = scenery(Tnight), sSpringDay = scenery(TspringD),
 if (sSummerNight.green > 250)
   pass(`forest reads as foliage: ${sSummerNight.green} green px in the tree bands`);
 else fail(`forest is not green — only ${sSummerNight.green} green px (should be hundreds); the pine bands are effectively empty`);
+
+/* BARE WINTER TREES MUST ACTUALLY BE BARK-COLOURED.
+   A pixel-count assertion said winter had almost no green, which was TRUE, and
+   a vision review still read the trees as "evergreen conifers". Both were right:
+   the trees are bare, but winter's branch colour was landing at RGB(35,50,69) --
+   the same value as summer's foliage -- because the season colour was blended 0.55
+   into the STYLE palette rather than dominating it. Assert the COLOUR, not just
+   the count: winter's dominant tree pixel must be dark and desaturated. */
+const bareCheck = vm.runInContext(`(${function(){
+  const D = (c) => [_cr(c), _cg(c), _cb(c)];
+  const dominant = (se) => {
+    const T = resolveTheme('midnight-day-clear', se);
+    applyTheme(T); buildThemeStrips(T);
+    const hist = {};
+    for (let i = 0; i < S_PINEN.d.length; i++){
+      const c = S_PINEN.d[i]; if (!c) continue;
+      hist[c] = (hist[c] || 0) + 1;
+    }
+    const best = Object.entries(hist).sort((a, b) => b[1] - a[1])[0];
+    return { rgb: D(+best[0]), n: best[1], bare: !!T.bare };
+  };
+  return { spring: dominant('spring'), winter: dominant('winter') };
+}})()`, globalThis.__CTX);
+{
+  const w = bareCheck.winter.rgb, s = bareCheck.spring.rgb;
+  const wMax = Math.max(...w), wMin = Math.min(...w);
+  const wSat = wMax === 0 ? 0 : (wMax - wMin) / wMax;
+  if (bareCheck.winter.bare && wSat < 0.22 && wMax < 70)
+    pass(`winter branches are bare bark, not summer foliage: RGB(${w}) saturation ${(wSat*100).toFixed(0)}% vs spring RGB(${s})`);
+  else
+    fail(`winter branches still look like foliage: RGB(${w}) sat ${(wSat*100).toFixed(0)}% (spring is RGB(${s}))`);
+}
 
 /* SEASONS REACH THE FOLIAGE: compare how much green foliage is COVERED.
    My earlier attempts at a "greenness" scalar both failed — one rewarded dark

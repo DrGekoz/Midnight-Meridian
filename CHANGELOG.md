@@ -6,6 +6,53 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [3.3.0] — 2026-10-01
+
+Winter trees finally read as winter. A question left open by v3.0, closed with
+pixels rather than opinion.
+
+### Fixed
+- **Winter's bare branches were rendered in summer's foliage colour.** The season
+  colour was blended 0.55 into the *style* palette, so winter's bark grey
+  `#2a2622` mixed into the midnight style's blue base `#233546` landed at
+  `RGB(35,50,69)` — visually identical to summer's foliage. A vision review had
+  repeatedly described "evergreen conifers with snow caps" while the pixel
+  counter insisted there was no green. **Both were measuring something real**:
+  the count was right and the colour was wrong.
+
+  The season now *dominates* rather than tints, with the blend weight scaled by
+  how saturated the season colour is. A vivid green can be blended gently and
+  still read as green; a near-neutral bark grey has to be blended hard or it
+  vanishes into whatever it is mixed into. Bare trees skip the blend entirely —
+  there is no foliage mass left to tint.
+
+  | season | tree pixel | reads as |
+  |---|---|---|
+  | spring | `RGB(63,96,54)` | fresh green |
+  | summer | `RGB(41,89,43)` | deep green |
+  | autumn | `RGB(148,91,32)` | amber |
+  | winter | `RGB(20,17,16)` | bare bark, saturation 20% |
+
+### How the disagreement was settled
+Read the live browser framebuffer directly through CDP after switching to
+winter/day, and histogrammed the tree band. The result is unambiguous: sky
+`155,188,251`, bark `20,17,16`, **zero green pixels**. A vision model still
+reported green foliage — it is reading dark bark and bright sky through the same
+branch shapes at 480×270, which is a limitation of the tool, not of the art.
+
+### Tests
+- **New assertion, colour-based rather than count-based:** winter's dominant tree
+  pixel must be desaturated (saturation < 22%) and dark (max channel < 70). The
+  pre-existing count-based assertion passed the bug, because "not green" and
+  "looks like bare wood" are different claims and only the second one was false.
+- 56 assertions in `node verify.js`, 9 in `tools/cdp_check.py`.
+
+### Notes
+- `tools/cdp_check.py` learned that clicking a control requires the panel to be
+  open first; buttons inside a closed panel are not laid out, so a click is a
+  no-op. The screenshot tooling now opens the panel before clicking, and the
+  theme is asserted by reading `MM.theme` back rather than trusting the click.
+
 ## [3.2.0] — 2026-10-01
 
 Layered ambient buses, and a real-browser check suite.

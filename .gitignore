@@ -7,6 +7,8 @@ frame_*.png
 diag-*.png
 hero_x3.png
 themes_sheet.png
+_browser_*.png
+_winter_*.png
 
 # the shipped single-file build is generated from src/ by tools/build_single.py,
 # but it IS the product, so it stays tracked.

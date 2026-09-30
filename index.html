@@ -1316,10 +1316,31 @@ function buildThemeStrips(T){
      returned an empty object, so `ramp[0]` was `{}`, which stored as 0 — every
      tree pixel came out transparent and the forest vanished. That is why spring
      and summer produced byte-identical strips and the band measured 3 green px. */
+  /* The SEASON must DOMINATE, not merely tint.
+     A flat 0.55 blend toward the season colour was wrong: winter's bare-branch
+     grey #2a2622 pulled into the midnight style's blue base #233546 still landed
+     at RGB(35,50,69) -- visually identical to summer's foliage, which is why a
+     reviewer read bare winter branches as evergreens.
+
+     The weight now scales with how SATURATED the season colour is. A vivid green
+     can be blended gently and still read as that green; a near-neutral bark grey
+     has to be blended hard or it vanishes into whatever it is mixed into. Bare
+     trees skip the blend entirely -- there is no foliage mass left to tint, so
+     the branch colour is used directly.
+
+     (Earlier still, mixPal was used here on a single COLOUR rather than on a
+     palette object; it iterates palette keys, returned {}, and every tree pixel
+     stored as 0 -- the forest vanished entirely. Hence mixC, not mixPal.) */
   const fol = T.foliage;
-  const tint = (base) => mixC(base, fol.a, 0.55);
-  const far = [tint(PF.a), tint(PF.b), tint(PF.c)], farRim = mixC(PF.rim, fol.rim, 0.6);
-  const near = [tint(PN.a), tint(PN.b), tint(PN.c)], nearRim = mixC(PN.rim, fol.rim, 0.6);
+  const fr = _cr(fol.a), fg = _cg(fol.a), fb2 = _cb(fol.a);
+  const fmax = Math.max(fr, fg, fb2), fmin = Math.min(fr, fg, fb2);
+  const fSat = fmax === 0 ? 0 : (fmax - fmin) / fmax;      // 0 = grey, 1 = pure
+  const folWeight = T.bare ? 1.0 : Math.min(0.92, 0.45 + fSat * 0.5);
+  const tint = (base) => T.bare ? fol.a : mixC(base, fol.a, folWeight);
+  const far  = T.bare ? [fol.a, fol.b, fol.c] : [tint(PF.a), tint(PF.b), tint(PF.c)];
+  const near = T.bare ? [fol.a, fol.b, fol.c] : [tint(PN.a), tint(PN.b), tint(PN.c)];
+  const farRim  = mixC(PF.rim, fol.rim, T.bare ? 0.85 : 0.6);
+  const nearRim = mixC(PN.rim, fol.rim, T.bare ? 0.85 : 0.6);
 
   S_SKY   = buildSky();
   S_MTNF  = buildRidge(MTNF_Y0, MTNF_H, 11, {pal:FARN, baseCycles:1, octaves:5, sharp:1.9, lift:6, hazeRows:14});
