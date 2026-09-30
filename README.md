@@ -68,6 +68,10 @@ sections, real song form, and drum grooves from **Bjorklund's Euclidean algorith
 - **It is tested in a real browser**, not just in a VM. `tools/cdp_check.py`
   talks to Chrome over the DevTools protocol and asserts zero console errors,
   true fullscreen coverage, and that a theme button really changes the frame.
+- **The browser checks are mutation-tested.** Every release since v3.1 broke the
+  code on purpose to confirm the suite actually fails. One check was passing
+  vacuously — it compared frame hashes while the piece was animating, so it
+  would have passed with every theme button disconnected.
 - **The music is a pure function.** It runs in Node with no `AudioContext`, which
   is why it can be unit-tested. The Euclidean generator has eight published test
   vectors and a sum invariant, because it was wrong three times first.
@@ -88,7 +92,7 @@ Everything is inlined. It works offline, from a USB stick, in a browser from 201
 python tools/fetch_audio.py     # re-fetch the ambient bed from Openverse
 python tools/build_single.py    # rebuild index.html from src/
 node verify.js                  # 56 assertions, including 96 loop proofs
-python tools/cdp_check.py      # 9 checks in REAL Chrome (needs --remote-debugging-port)
+python tools/cdp_check.py      # 11 checks in REAL Chrome (needs --remote-debugging-port)
 node snap.js                    # render a theme contact sheet to PNG
 node diag-perf.js               # per-pass frame cost
 ```

@@ -6,6 +6,37 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [3.4.0] — 2026-10-01
+
+The browser check for theme buttons was a false positive. Found by mutation
+testing rather than by reading the code.
+
+### Fixed
+- **"Clicking a theme button changes the frame" could never fail.** The piece is
+  animating, so `hashFB()` changes on every tick whether or not anything was
+  clicked. The check sampled the hash before and after a click, compared, and
+  passed — because the train had moved in the 1.2 s between samples. It would
+  have passed with every button wired to nothing.
+
+  The check now pauses first (`MM.paused = true`), proves the hash is stable
+  while paused, then clicks and re-reads. A theme change rebuilds the palettes
+  and strips, so a genuine switch must change the hash even with time frozen.
+
+- **`paused` was unreachable from outside the module.** `simFrame` is a getter,
+  so it could not be reassigned, and there was no setter for `paused` at all —
+  meaning no browser test could hold the scene still. `MM.paused`,
+  `MM.togglePause()` and `MM.renderNow()` are now exposed.
+
+### Tests
+- **11 browser assertions**, up from 9: hash stability while paused, a paused
+  theme button still changing the scene, and the clicked theme actually becoming
+  active.
+- **Mutation-tested.** Disabling the theme buttons in `ui.js` was confirmed to
+  make the new checks fail (`1261940468 -> 1261940468`, `style=midnight`), and
+  restoring the file made them pass again. The previous version passed that same
+  mutant. A green assertion nobody has seen fail is not evidence.
+- 56 assertions in `node verify.js`. 67 total.
+
 ## [3.3.0] — 2026-10-01
 
 Winter trees finally read as winter. A question left open by v3.0, closed with

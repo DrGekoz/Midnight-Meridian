@@ -4085,7 +4085,17 @@ if (typeof globalThis !== 'undefined'){
   globalThis.MM = { get theme(){ return ACTIVE_THEME; }, setTheme, verifyLoop,
                     THEMES, SEASON, resolveTheme, render, fb, hashFB,
                     buildThemeStrips, applyTheme, Audio_,
-                    get simFrame(){ return simFrame; } };
+                    get simFrame(){ return simFrame; },
+                    /* Pause control. Exposed deliberately: the piece is
+                       animating, so any test that compares frame hashes has to
+                       freeze time first or it measures the train moving rather
+                       than the thing it meant to measure. `simFrame` is a getter
+                       and cannot be assigned from outside, so without this a
+                       browser check literally cannot hold the scene still. */
+                    get paused(){ return paused; },
+                    set paused(v){ paused = !!v; },
+                    togglePause(){ paused = !paused; return paused; },
+                    renderNow(){ render(simFrame / 60, ACTIVE_THEME); } };
 }
 
 if (typeof document !== 'undefined' && document.getElementById('cv')) boot();

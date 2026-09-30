@@ -207,26 +207,42 @@ def main() -> int:
     check("panel exposes 5 gain sliders", ui.get("sliderCount", 0) >= 5,
           f"{ui.get('sliderCount')} sliders: {ui.get('sliderIds')}")
 
-    # --- 4. a theme button really changes the frame -------------------------
-    hash_js = """(()=>{ if(!window.MM||!window.MM.hashFB) return null;
-        return window.MM.hashFB().toString(16); })()"""
-    before = p.eval(hash_js)
-    changed = p.eval("""(()=>{
+    # --- 4. a theme button really changes the scene --------------------------
+    # The piece is ANIMATING, so hashFB() changes on every tick whether or not
+    # anything was clicked. The first version of this check sampled the hash
+    # before and after a click and compared -- which would have passed even with
+    # the button wired to nothing, because the train had moved in between.
+    #
+    # MM.paused is the real pause control; `simFrame` is a getter and cannot be
+    # assigned from outside, so without a setter a browser check literally
+    # cannot hold the scene still.
+    p.eval("MM.paused = true")
+    time.sleep(0.5)
+    frozen_a = p.eval("MM.hashFB()")
+    time.sleep(0.6)
+    frozen_b = p.eval("MM.hashFB()")
+    check("hash is stable while paused (the check can isolate a real change)",
+          frozen_a == frozen_b, f"{frozen_a} vs {frozen_b}")
+
+    switched = p.eval("""(()=>{
       const b=[...document.querySelectorAll('button')]
         .find(x=>x.textContent.trim()==='Japan');
       if(!b) return 'nobutton';
       b.click();
-      return 'clicked';
+      return (window.MM && window.MM.theme) ? window.MM.theme.style : 'notheme';
     })()""")
-    time.sleep(1.2)
-    after = p.eval(hash_js)
-    check("clicking a theme button changes the rendered frame",
-          before is not None and after is not None and before != after,
-          f"{before} -> {after} ({changed})")
+    time.sleep(1.0)
+    frozen_c = p.eval("MM.hashFB()")
+    check("a paused theme button still changes the scene",
+          frozen_c != frozen_b, f"{frozen_b} -> {frozen_c} (style={switched})")
+    check("the clicked theme actually became active",
+          switched == "japan", f"MM.theme.style = {switched}")
 
-    # switch back so the piece is left in a neutral state
+    # back to a neutral scene, still paused
     p.eval("""(()=>{const b=[...document.querySelectorAll('button')]
         .find(x=>x.textContent.trim()==='Midnight'); if(b) b.click(); return 1;})()""")
+    time.sleep(0.8)
+    p.eval("MM.paused = false")
 
     # --- 5. it is actually animating ----------------------------------------
     fps = p.eval("""(async () => {
