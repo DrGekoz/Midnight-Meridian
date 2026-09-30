@@ -1999,6 +1999,7 @@ function render(tIn, T){
          shows in the water — which is exactly the detail that sells water. */
   snapshotScene();
   drawWater(t, T);
+  drawWake(t, T);
   drawIce(T);
 
   /* --- 10. foreground occluders and the near bank (the bank crest is wavy too) */
@@ -2520,6 +2521,48 @@ function buildPoles(y0, h, seed, spacing, pal){
     }
   }
   return s;
+}
+
+/* --- WAKE RIPPLES: the train's passage disturbs the water -------------------
+   A long consist moving past a lake leaves a wake, and the puddle surface should
+   break up under it. This is drawn into the reflection rows only, so it reads as
+   disturbance ON the water rather than as rain on the picture.
+
+   LOOP CRITICAL: the wake is a function of t with integer harmonics of the loop
+   (the emitted cycles per 120s), so it closes exactly. */
+function drawWake(t, T){
+  /* where the train is over the water: the consist spans TX..TX+TW */
+  const x0 = TX, x1 = TX + TW;
+  /* SIN-table phase offsets. Each is an INTEGER harmonic of the loop: 1 cycle,
+  2 cycles and 5 cycles per 120s. Harmonics must be integers or the wake does
+  not close at t=120. These are recomputed per row because each row is phase
+  shifted by its distance from the shoreline. */
+  for (let y = LAKE_Y0; y < LAKE_Y0 + LAKE_H; y++){
+    /* the wake spreads and fades with distance from the shoreline */
+    const d = y - LAKE_Y0;
+    if (d > 34) break;
+    const spread = 1.0 + d * 0.10;                 // V opening toward the viewer
+    const fall   = 1 - d / 34;                      // and fades with it
+    const hA = (TAU8 * 5 * (t / LOOP_SECONDS) + d * 9)  | 0;
+    const hB = (TAU8 * 3 * (t / LOOP_SECONDS) - d * 5)  | 0;
+    const rowW = SIN[(hA + 40) & SIN_MASK] * (2 + d * 0.30) * spread;
+    /* Math.ceil ran once per PIXEL; it depends only on the row, so it is hoisted.
+         That alone was most of the pass cost. */
+    const xa = x0 - Math.ceil(spread * 12), xb = x1 + Math.ceil(spread * 12);
+    for (let x = xa; x <= xb; x++){
+      if (x < 0 || x >= VW) continue;
+      /* two crossing wave trains. Both read the SIN TABLE with integer loop
+      harmonics -- Math.sin per pixel cost ~4ms and, worse, the 3.1x
+      multiplier I first wrote is NOT a loop harmonic, so the wake would not
+      close at t=120. Harmonics must be integers. */
+      const wv = SIN[(hA + (x * 11 + rowW * 4) & SIN_MASK)]
+      * SIN[(hB + x * 9 - rowW * 3) & SIN_MASK];
+      if (wv < 0.55) continue;
+      /* foam: additive pale blue, dithered so it breaks into pixels */
+      if (bayer01(x, y) > wv * 0.55 * fall) continue;
+      addPix(x, y, 26 * fall, 34 * fall, 46 * fall);
+    }
+  }
 }
 
 /* --- Autumn leaf fall + winter fireflies.

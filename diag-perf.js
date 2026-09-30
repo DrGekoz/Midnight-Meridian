@@ -26,6 +26,7 @@ const EXTRA = `
         ['embankment',      function(t){ blitStrip(S_EMB, EMB_Y0, SPD_EMB * t, false); }],
         ['snapshot',        function(t){ snapshotScene(); }],
         ['water',           function(t){ drawWater(t, T); }],
+        ['wake',            function(t){ drawWake(t, T); }],
         ['ice',             function(t){ drawIce(T); }],
         ['train',           function(t){ drawTrain(t); }],
         ['trainLgt',        function(t){ drawTrainLight(t, T); }],

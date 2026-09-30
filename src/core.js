@@ -1613,6 +1613,7 @@ function render(tIn, T){
          shows in the water — which is exactly the detail that sells water. */
   snapshotScene();
   drawWater(t, T);
+  drawWake(t, T);
   drawIce(T);
 
   /* --- 10. foreground occluders and the near bank (the bank crest is wavy too) */

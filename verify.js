@@ -25,7 +25,7 @@ if (!m) { console.error('FAIL: no <script> block in index.html'); process.exit(1
 const CODE = m[1] + `
 ;globalThis.__X = {
   drawGroundLitter, drawLeafFall, buildPoles, drawSnowCaps, drawSpringDetail,
-  S_POLES, POLES_Y0, SPD_POLES,
+  S_POLES, POLES_Y0, SPD_POLES, drawWake,
   render, hashFB, snapshotScene, VW, VH, LOOP_SECONDS, LOOP_FRAMES, fb, SNAP, SNAP_ROWS,
   SNAP_Y0, TX, TY, TW, TH, RAIL_Y, LAKE_Y0, SMOKE_N, SMOKE_DT, SMOKE_LIFE, WINDOWS, WHEELS,
   SPD_STAR, SPD_MTNF, SPD_MTNM, SPD_PINEF, SPD_PINEN, SPD_EMB, SPD_FORE,
